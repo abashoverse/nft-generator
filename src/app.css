@@ -1,0 +1,164 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Theme tokens — LCD aesthetic (light mode) */
+@theme {
+	--color-lcd: #d4ded1;
+	--color-lcd-light: #e2eae0;
+	--color-lcd-dark: #c5d1c2;
+	--color-ink: #0d0d0d;
+	--color-on-ink: #ffffff;
+	--color-border: #1a1a1a;
+	--color-muted: #6b6b6b;
+
+	--font-display: 'Satoshi', system-ui, sans-serif;
+	--font-body: 'Satoshi', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', monospace;
+
+	--ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+/* Dark mode overrides — inverted LCD */
+:root.dark {
+	--color-lcd: #0a0a0a;
+	--color-lcd-light: #141414;
+	--color-lcd-dark: #383838;
+	--color-ink: #d4ded1;
+	--color-on-ink: #0a0a0a;
+	--color-border: #d4ded1;
+	--color-muted: #8a9a8a;
+}
+
+@layer utilities {
+	.font-display {
+		font-family: var(--font-display);
+	}
+	.font-body {
+		font-family: var(--font-body);
+	}
+	.font-mono {
+		font-family: var(--font-mono);
+	}
+	.font-array {
+		font-family: 'Satoshi', system-ui, sans-serif;
+		font-weight: 500;
+		letter-spacing: -0.01em;
+	}
+	.font-array-semi {
+		font-family: 'Satoshi', system-ui, sans-serif;
+		font-weight: 700;
+		letter-spacing: -0.015em;
+	}
+	.font-array-bold {
+		font-family: 'Satoshi', system-ui, sans-serif;
+		font-weight: 900;
+		letter-spacing: -0.02em;
+	}
+	.font-brains-medium {
+		font-family: 'JetBrains Mono', monospace;
+		font-weight: 500;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	scroll-behavior: smooth;
+}
+
+body {
+	font-family: var(--font-body);
+	background-color: var(--color-lcd);
+	color: var(--color-ink);
+	min-height: 100vh;
+	overflow-x: hidden;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+	background-color: var(--color-ink);
+	color: var(--color-on-ink);
+}
+
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+::-webkit-scrollbar-track {
+	background: var(--color-lcd);
+}
+::-webkit-scrollbar-thumb {
+	background: var(--color-border);
+	border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: var(--color-ink);
+}
+
+@keyframes fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.animate-in {
+	animation: fade-in 0.3s var(--ease-out-expo);
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.spin {
+	animation: spin 0.9s linear infinite;
+}
+
+/* Hide native file-input chrome on the dropzone hidden input */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border-width: 0;
+}
+
+/* Form base styles for native controls used inline */
+input[type='text'],
+input[type='number'],
+input[type='password'],
+input[type='file'],
+textarea,
+select {
+	font-family: var(--font-body);
+}
+
+textarea {
+	resize: vertical;
+	min-height: 88px;
+}
+
+/* Hide native number-input spinners — we render our own +/- controls. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+	-webkit-appearance: none;
+	margin: 0;
+}
+input[type='number'] {
+	-moz-appearance: textfield;
+	appearance: textfield;
+}
