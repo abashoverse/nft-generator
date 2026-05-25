@@ -2,10 +2,10 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
-	import { PUBLIC_UMAMI_SCRIPT_URL, PUBLIC_UMAMI_WEBSITE_ID } from '$env/static/public';
+	import { env } from '$env/dynamic/public';
 
-	const umamiUrl = PUBLIC_UMAMI_SCRIPT_URL || undefined;
-	const umamiId = PUBLIC_UMAMI_WEBSITE_ID || undefined;
+	const umamiUrl = env.PUBLIC_UMAMI_SCRIPT_URL || undefined;
+	const umamiId = env.PUBLIC_UMAMI_WEBSITE_ID || undefined;
 
 	let { children } = $props();
 

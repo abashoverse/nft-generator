@@ -1,12 +1,14 @@
 import type { Address } from 'viem';
-import {
+import { env } from '$env/dynamic/public';
+
+const {
 	PUBLIC_ABASHO_NFT_ADDRESS,
 	PUBLIC_ABASHOS_NFT_ADDRESS,
 	PUBLIC_PAY_RECEIVER_ADDRESS,
 	PUBLIC_PAY_AMOUNT_USD,
 	PUBLIC_SELF_HOST_URL,
 	PUBLIC_FORCE_PAYWALL
-} from '$env/static/public';
+} = env;
 import {
 	connectInjected,
 	connectSpecificWallet,
