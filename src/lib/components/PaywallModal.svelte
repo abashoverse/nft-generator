@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { paywall } from '$lib/paywall.svelte';
+	import { onMount } from 'svelte';
+	import { paywall, type Eip6963DetectedWallet } from '$lib/paywall.svelte';
 	import Button from './ui/Button.svelte';
 	import Modal from './ui/Modal.svelte';
 	import {
@@ -20,10 +21,31 @@
 
 	let busy = $state(false);
 	let lastError = $state<string | null>(null);
+	let detectedWallets = $state<Eip6963DetectedWallet[]>([]);
+	let holderCheckAttempted = $state(false);
 
 	let quote = $state<{ usd: number; ethAmount: string; ethUsd: number } | null>(null);
 	let quoteLoading = $state(false);
 	let quoteError = $state<string | null>(null);
+
+	interface Eip6963AnnounceEvent extends Event {
+		detail?: Eip6963DetectedWallet;
+	}
+
+	onMount(() => {
+		const onAnnounce = (e: Event) => {
+			const evt = e as Eip6963AnnounceEvent;
+			if (!evt.detail) return;
+			const next = evt.detail;
+			detectedWallets = [
+				...detectedWallets.filter((w) => w.info.uuid !== next.info.uuid),
+				next
+			];
+		};
+		window.addEventListener('eip6963:announceProvider', onAnnounce);
+		window.dispatchEvent(new Event('eip6963:requestProvider'));
+		return () => window.removeEventListener('eip6963:announceProvider', onAnnounce);
+	});
 
 	function shortAddr(addr: string): string {
 		return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -60,6 +82,13 @@
 		}
 	});
 
+	async function handleCheckHolder() {
+		await run(async () => {
+			await paywall.checkHolder();
+			holderCheckAttempted = true;
+		});
+	}
+
 	async function handlePay() {
 		if (!quote) {
 			lastError = 'ETH price not loaded.';
@@ -85,18 +114,48 @@
 					1. Connect &amp; verify
 				</p>
 			</div>
+
 			{#if !paywall.walletAddress}
-				<Button
-					variant="primary"
-					size="md"
-					class="w-full"
-					onclick={() => run(paywall.connect)}
-					disabled={busy}
-				>
-					Connect wallet
-				</Button>
+				{#if detectedWallets.length > 0}
+					<div class="space-y-2">
+						{#each detectedWallets as wallet (wallet.info.uuid)}
+							<button
+								type="button"
+								onclick={() => run(() => paywall.connectVia(wallet))}
+								disabled={busy}
+								class="border-ink/30 bg-surface hover:border-ink hover:bg-ink/[0.06] flex w-full items-center gap-3 rounded-md border-2 px-3 py-2 text-left text-xs text-ink transition-colors disabled:opacity-50"
+							>
+								<img
+									src={wallet.info.icon}
+									alt=""
+									class="h-5 w-5 shrink-0 rounded"
+								/>
+								<span class="font-body flex-1">{wallet.info.name}</span>
+							</button>
+						{/each}
+					</div>
+				{:else}
+					<Button
+						variant="primary"
+						size="md"
+						class="w-full"
+						onclick={() => run(paywall.connect)}
+						disabled={busy}
+					>
+						Connect browser wallet
+					</Button>
+				{/if}
 			{:else}
-				<p class="font-mono text-xs text-muted">{shortAddr(paywall.walletAddress)}</p>
+				<div class="flex items-center justify-between gap-2">
+					<p class="font-mono text-xs text-muted">{shortAddr(paywall.walletAddress)}</p>
+					<button
+						type="button"
+						onclick={() => run(paywall.disconnect)}
+						class="font-brains-medium text-[10px] uppercase tracking-widest text-muted hover:text-ink"
+					>
+						Disconnect
+					</button>
+				</div>
 				{#if !paywall.siweVerified}
 					<Button
 						variant="primary"
@@ -141,14 +200,27 @@
 							class="text-ink underline underline-offset-2 hover:text-ink">delegate.xyz</a
 						>.
 					</p>
+					{#if holderCheckAttempted && !busy}
+						<p
+							class="font-brains-medium text-[11px] uppercase tracking-widest text-amber-700 dark:text-amber-400"
+						>
+							No abasho or abashos holdings found in this wallet or any vault delegated to it.
+						</p>
+					{/if}
 					<Button
 						variant="secondary"
 						size="md"
 						class="w-full"
-						onclick={() => run(paywall.checkHolder)}
+						onclick={handleCheckHolder}
 						disabled={busy}
 					>
-						Check holder status
+						{#if busy}
+							<Loader2 class="h-4 w-4 spin" /> Checking…
+						{:else if holderCheckAttempted}
+							Check again
+						{:else}
+							Check holder status
+						{/if}
 					</Button>
 				{/if}
 			</div>
@@ -169,25 +241,35 @@
 						<CheckCircle2 class="h-3.5 w-3.5" /> Payment received, unlocked
 					</p>
 				{:else}
-					<div class="flex gap-4 text-xs text-ink">
-						<label class="flex cursor-pointer items-center gap-2">
-							<input
-								type="radio"
-								bind:group={paywall.payChain}
-								value="mainnet"
-								class="accent-ink"
-							/>
+					<div
+						class="grid grid-cols-2 overflow-hidden rounded-md border-2 border-ink"
+						role="radiogroup"
+						aria-label="Payment chain"
+					>
+						<button
+							type="button"
+							role="radio"
+							aria-checked={paywall.payChain === 'mainnet'}
+							onclick={() => (paywall.payChain = 'mainnet')}
+							class="font-brains-medium px-3 py-2 text-xs uppercase tracking-wider transition-colors
+							{paywall.payChain === 'mainnet'
+								? 'bg-ink text-on-ink'
+								: 'bg-transparent text-ink hover:bg-ink/[0.06]'}"
+						>
 							Mainnet
-						</label>
-						<label class="flex cursor-pointer items-center gap-2">
-							<input
-								type="radio"
-								bind:group={paywall.payChain}
-								value="base"
-								class="accent-ink"
-							/>
+						</button>
+						<button
+							type="button"
+							role="radio"
+							aria-checked={paywall.payChain === 'base'}
+							onclick={() => (paywall.payChain = 'base')}
+							class="font-brains-medium border-l-2 border-ink px-3 py-2 text-xs uppercase tracking-wider transition-colors
+							{paywall.payChain === 'base'
+								? 'bg-ink text-on-ink'
+								: 'bg-transparent text-ink hover:bg-ink/[0.06]'}"
+						>
 							Base
-						</label>
+						</button>
 					</div>
 					{#if quoteLoading}
 						<p class="font-mono flex items-center gap-2 text-xs text-muted">

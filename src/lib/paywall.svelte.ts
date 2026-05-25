@@ -1,17 +1,42 @@
 import type { Address } from 'viem';
 import {
-	connectWallet,
+	PUBLIC_ABASHO_NFT_ADDRESS,
+	PUBLIC_ABASHOS_NFT_ADDRESS,
+	PUBLIC_PAY_RECEIVER_ADDRESS,
+	PUBLIC_PAY_AMOUNT_USD,
+	PUBLIC_SELF_HOST_URL,
+	PUBLIC_FORCE_PAYWALL
+} from '$env/static/public';
+import {
+	connectInjected,
+	connectSpecificWallet,
+	disconnectWallet,
 	signSiwe,
 	readNftBalance,
 	getDelegatedVaults,
 	sendPayment,
 	getEthUsdPrice,
 	usdToEthString,
+	type Eip6963DetectedWallet,
 	type SupportedChain
 } from './web3';
+export type { Eip6963DetectedWallet } from './web3';
 
-const STORAGE_KEY = 'nft-gen-paywall-v1';
-const DEV_BYPASS = import.meta.env.DEV;
+// PUBLIC_FORCE_PAYWALL=true in .env lets you exercise the paywall flow during
+// dev. Dev-only: in production builds this flag is ignored so a misconfigured
+// .env can't lock a deploy with no real unlock options.
+const forceFlagOn =
+	typeof PUBLIC_FORCE_PAYWALL === 'string' &&
+	PUBLIC_FORCE_PAYWALL.trim().toLowerCase() === 'true';
+const FORCE_PAYWALL_IN_DEV = import.meta.env.DEV && forceFlagOn;
+
+const DEV_BYPASS = import.meta.env.DEV && !FORCE_PAYWALL_IN_DEV;
+
+if (typeof console !== 'undefined' && import.meta.env.DEV) {
+	console.info(
+		`[paywall] dev mode, ${FORCE_PAYWALL_IN_DEV ? 'forced ON' : 'bypassed'} (PUBLIC_FORCE_PAYWALL=${JSON.stringify(PUBLIC_FORCE_PAYWALL)})`
+	);
+}
 
 function envAddress(raw: unknown): Address | null {
 	if (typeof raw !== 'string') return null;
@@ -26,82 +51,55 @@ function envString(raw: unknown): string | null {
 	return t.length > 0 ? t : null;
 }
 
-const ABASHO_NFT = envAddress(import.meta.env.PUBLIC_ABASHO_NFT_ADDRESS);
-const ABASHOS_NFT = envAddress(import.meta.env.PUBLIC_ABASHOS_NFT_ADDRESS);
-const PAY_RECEIVER = envAddress(import.meta.env.PUBLIC_PAY_RECEIVER_ADDRESS);
-const PAY_AMOUNT_USD = Number(import.meta.env.PUBLIC_PAY_AMOUNT_USD || '10');
-const SELF_HOST_URL = envString(import.meta.env.PUBLIC_SELF_HOST_URL);
+const ABASHO_NFT = envAddress(PUBLIC_ABASHO_NFT_ADDRESS);
+const ABASHOS_NFT = envAddress(PUBLIC_ABASHOS_NFT_ADDRESS);
+const PAY_RECEIVER = envAddress(PUBLIC_PAY_RECEIVER_ADDRESS);
+const PAY_AMOUNT_USD = Number(PUBLIC_PAY_AMOUNT_USD || '10');
+const SELF_HOST_URL = envString(PUBLIC_SELF_HOST_URL);
 
 const HAS_NFT_CONFIG = !!(ABASHO_NFT || ABASHOS_NFT);
 const HAS_RECEIVER_CONFIG = !!PAY_RECEIVER;
-const PAYWALL_ENABLED = HAS_NFT_CONFIG || HAS_RECEIVER_CONFIG;
+const PAYWALL_ENABLED = FORCE_PAYWALL_IN_DEV || HAS_NFT_CONFIG || HAS_RECEIVER_CONFIG;
 
 export const FREE_TIER_EXPORT_PX = 500;
 
-interface Persisted {
-	walletAddress?: Address;
-	siweVerified?: boolean;
-	isHolder?: boolean;
-	hasPaid?: boolean;
-}
-
-function load(): Persisted {
-	if (typeof localStorage === 'undefined') return {};
-	try {
-		return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-	} catch {
-		return {};
-	}
-}
-
-function save(state: Persisted) {
-	if (typeof localStorage === 'undefined') return;
-	localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
 function createPaywall() {
-	const stored = load();
-	let walletAddress = $state<Address | null>(stored.walletAddress ?? null);
-	let siweVerified = $state(stored.siweVerified ?? false);
-	let isHolder = $state(stored.isHolder ?? false);
-	let hasPaid = $state(stored.hasPaid ?? false);
+	// All state is in-memory only. No localStorage, no sessionStorage. Every
+	// page load is a fresh session, the user has to reconnect and re-verify.
+	let walletAddress = $state<Address | null>(null);
+	let siweVerified = $state(false);
+	let isHolder = $state(false);
+	let hasPaid = $state(false);
 	let payChain = $state<SupportedChain>('mainnet');
 
-	// Bypass paywall in three cases:
-	//   1. Running in dev mode (vite dev sets import.meta.env.DEV).
-	//   2. No gating env vars configured at all (deploy without paywall).
-	//   3. User has verified + (holder OR paid).
 	const unlocked = $derived(
 		DEV_BYPASS || !PAYWALL_ENABLED || (siweVerified && (isHolder || hasPaid))
 	);
 
-	function persist() {
-		save({
-			walletAddress: walletAddress ?? undefined,
-			siweVerified,
-			isHolder,
-			hasPaid
-		});
-	}
-
-	async function connect() {
-		const addr = await connectWallet();
+	function adoptAddress(addr: Address | null) {
 		if (!addr) return null;
+		// New wallet means previous SIWE/holder status no longer applies.
 		if (walletAddress && walletAddress.toLowerCase() !== addr.toLowerCase()) {
 			siweVerified = false;
 			isHolder = false;
 			hasPaid = false;
 		}
 		walletAddress = addr;
-		persist();
 		return addr;
+	}
+
+	async function connect() {
+		return adoptAddress(await connectInjected());
+	}
+
+	async function connectVia(wallet: Eip6963DetectedWallet) {
+		return adoptAddress(await connectSpecificWallet(wallet));
 	}
 
 	async function signIn() {
 		if (!walletAddress) throw new Error('Connect a wallet first.');
 		const ok = await signSiwe(walletAddress);
 		siweVerified = ok;
-		persist();
 		return ok;
 	}
 
@@ -113,10 +111,7 @@ function createPaywall() {
 		if (ABASHO_NFT) nftContracts.push(ABASHO_NFT);
 		if (ABASHOS_NFT) nftContracts.push(ABASHOS_NFT);
 
-		// Direct holder check on the connected wallet.
 		const directChecks = nftContracts.map((c) => readNftBalance(c, walletAddress!));
-
-		// delegate.xyz: pull vault wallets that delegated to the connected wallet.
 		const vaults = await getDelegatedVaults(walletAddress, nftContracts);
 		const delegatedChecks = vaults.flatMap((v) =>
 			nftContracts.map((c) => readNftBalance(c, v))
@@ -124,7 +119,6 @@ function createPaywall() {
 
 		const balances = await Promise.all([...directChecks, ...delegatedChecks]);
 		isHolder = balances.some((b) => b > 0n);
-		persist();
 		return isHolder;
 	}
 
@@ -139,16 +133,15 @@ function createPaywall() {
 		if (!PAY_RECEIVER) throw new Error('Payment receiver is not configured.');
 		const txHash = await sendPayment(payChain, PAY_RECEIVER, ethAmount);
 		hasPaid = true;
-		persist();
 		return txHash;
 	}
 
-	function disconnect() {
+	async function disconnect() {
+		await disconnectWallet();
 		walletAddress = null;
 		siweVerified = false;
 		isHolder = false;
 		hasPaid = false;
-		persist();
 	}
 
 	return {
@@ -192,6 +185,7 @@ function createPaywall() {
 			return SELF_HOST_URL;
 		},
 		connect,
+		connectVia,
 		signIn,
 		checkHolder,
 		quotePayment,

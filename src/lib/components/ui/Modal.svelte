@@ -29,7 +29,7 @@
 	bind:this={dialog}
 	onclose={onClose}
 	onclick={handleBackdropClick}
-	class="w-[90vw] max-w-md rounded-lg border-2 border-ink bg-charcoal p-0 text-ink backdrop:bg-ink/40 backdrop:backdrop-blur-sm"
+	class="fixed inset-0 m-auto w-[90vw] max-w-md rounded-lg border-2 border-ink bg-charcoal p-0 text-ink backdrop:bg-ink/40 backdrop:backdrop-blur-sm"
 >
 	<div class="flex flex-col">
 		{#if title}

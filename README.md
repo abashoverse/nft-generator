@@ -8,7 +8,7 @@ A generative art engine for layered NFT collections, built with **SvelteKit 2** 
 ![Tailwind](https://img.shields.io/badge/Tailwind-v4-38BDF8?style=flat-square&logo=tailwindcss)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 
-This is a Svelte rewrite of [0xSylla/Generative-NFT-Art-Metadata-Generator](https://github.com/0xSylla/Generative-NFT-Art-Metadata-Generator). The Next.js original gave us the spec; we just fuck with Svelte more.
+Inspired by [0xSylla/Generative-NFT-Art-Metadata-Generator](https://github.com/0xSylla/Generative-NFT-Art-Metadata-Generator); we just fuck with Svelte more.
 
 ---
 
@@ -36,7 +36,8 @@ This is a Svelte rewrite of [0xSylla/Generative-NFT-Art-Metadata-Generator](http
 - [tailwind-variants](https://www.tailwind-variants.org/) + [tailwind-merge](https://github.com/dcastil/tailwind-merge) for UI primitives
 - [lucide-svelte](https://lucide.dev/) for icons
 - [JSZip](https://stuk.github.io/jszip/) for export
-- [viem](https://viem.sh/) for wallet connect, SIWE, contract reads, payment txs
+- [viem](https://viem.sh/) + [@wagmi/core](https://wagmi.sh/) + [@wagmi/connectors](https://wagmi.sh/core/connectors) for wallet connect, SIWE, contract reads, payment txs
+- [CoinGecko](https://www.coingecko.com/) for live ETH/USD price quotes
 - Canvas API for rendering
 - Static adapter (`@sveltejs/adapter-static`) - the whole thing is a prerendered SPA, no server
 
@@ -66,7 +67,7 @@ npm run build    # production build (static, lands in build/)
 npm run preview  # serve the production build locally
 ```
 
-In `npm run dev`, the paywall is bypassed (see [Paywall](#paywall) below).
+In `npm run dev`, the paywall is bypassed by default. Set `PUBLIC_FORCE_PAYWALL=true` in `.env` to exercise it during dev (see [Paywall](#paywall) below).
 
 ---
 
@@ -148,9 +149,16 @@ PUBLIC_PAY_AMOUNT_USD=10
 
 # GitHub repo link for the self-host option. Hidden if unset.
 PUBLIC_SELF_HOST_URL=https://github.com/abashoverse/nft-generator
+
+# Dev-only: force the paywall on while running `npm run dev` so you can
+# exercise the locked UI and unlock modal without a production build.
+# Ignored in production builds.
+PUBLIC_FORCE_PAYWALL=true
 ```
 
 If **none** of the paywall vars are set, the paywall is OFF and the app is fully free (same as dev mode). The moment any of them is set, the paywall turns on and each option in the unlock modal renders only if its specific config is set.
+
+All vars are read via SvelteKit's `$env/static/public`, not `import.meta.env`, so the `PUBLIC_` prefix is required and missing vars resolve to `undefined`.
 
 ---
 
@@ -158,13 +166,29 @@ If **none** of the paywall vars are set, the paywall is OFF and the app is fully
 
 The free tier is hard-capped at **500×500** exports. Custom resolution unlocks via one of three paths:
 
-1. **Hold an abasho or abashos NFT** on Ethereum mainnet. Connect wallet, sign in with Ethereum, click "Check holder status". The check also picks up [delegate.xyz](https://delegate.xyz) delegations, so a hot wallet can verify against NFTs sitting in a delegating vault without moving them.
-2. **Pay once** in ETH on mainnet or Base. Default $10, converted to ETH live via CoinGecko.
+1. **Hold an abasho or abashos NFT** on Ethereum mainnet. Connect wallet, sign in with Ethereum, click "Check holder status". The check also picks up [delegate.xyz](https://delegate.xyz) V2 delegations (general rights only), so a hot wallet can verify against NFTs sitting in a delegating vault without moving them.
+2. **Pay once** in ETH on mainnet or Base. Default $10, converted to ETH live via CoinGecko at quote time and locked for the actual tx.
 3. **Self-host** the app yourself by cloning the repo. The whole codebase is open source, no paywall when running locally.
 
-State is cached in `localStorage`. `npm run dev` (and any build where no paywall env vars are set) bypasses the gate entirely.
+### Connect flow
 
-This is **honor-system gating**: everything runs client-side, so a determined user with dev tools can flip the localStorage flag and bypass it. The self-host link is the deliberate pressure release valve. If you need real enforcement, you'd want to move the export pipeline to a backend that verifies payment on-chain before serving the ZIP, which is out of scope for this version.
+- Browser wallets are discovered via [EIP-6963](https://eips.ethereum.org/EIPS/eip-6963), so each installed extension (MetaMask, Rabby, Coinbase Wallet, etc.) shows up as its own button instead of fighting over `window.ethereum`. A plain "Connect browser wallet" button falls back to whatever owns the global when no EIP-6963 announces fire.
+- On connect, wagmi requests a switch to Ethereum mainnet (one popup, not two) and then an `ensureMainnet()` safety call re-requests the switch explicitly for wallets that ignore the connect-time hint.
+- SIWE messages follow [EIP-4361](https://eips.ethereum.org/EIPS/eip-4361) and are hand-rolled (no `siwe` library, see [tradeoffs](#tradeoffs)). Signature verification happens client-side via viem's `verifyMessage`.
+
+### Session state
+
+Paywall state is **in-memory only**. Reload the page = blank slate, user reconnects and re-signs. wagmi is configured with `noopStorage` so it doesn't auto-reconnect either. There's no `localStorage` to clear.
+
+### RPC providers
+
+Mainnet and Base reads go through a `fallback()` transport over three public RPCs each (`eth.llamarpc.com`, `cloudflare-eth.com`, `ethereum-rpc.publicnode.com` for mainnet; `mainnet.base.org`, `base-rpc.publicnode.com`, `base.llamarpc.com` for Base). If one rate-limits or CORS-fails, viem rolls to the next. If you want your own Alchemy/Infura, swap the URLs in `src/lib/wagmi.ts`.
+
+### Tradeoffs
+
+This is **honor-system gating**: everything runs client-side, so a determined user with dev tools can monkey-patch the runtime and bypass it. The self-host link is the deliberate pressure release valve. If you need real enforcement, you'd want to move the export pipeline to a backend that verifies payment on-chain before serving the ZIP, which is out of scope for this version.
+
+The `siwe` library was dropped because its CJS source has a top-level `require('ethers')` that breaks esbuild bundling. The hand-rolled EIP-4361 message uses the same wire format and verifies through viem.
 
 ---
 
@@ -188,8 +212,9 @@ src/
 │   ├── stores/
 │   │   ├── generator.svelte.ts   # core state (layers, rules, config, collection)
 │   │   └── theme.svelte.ts       # light/dark theme store
-│   ├── paywall.svelte.ts         # paywall state, env-driven gating, localStorage cache
-│   ├── web3.ts                   # viem helpers: connect, SIWE, balanceOf, sendTx, CoinGecko
+│   ├── paywall.svelte.ts         # paywall state, env-driven gating (in-memory only, no persistence)
+│   ├── wagmi.ts                  # wagmi config, RPC fallback transports, noopStorage
+│   ├── web3.ts                   # viem helpers: connect, SIWE, balanceOf, delegate.xyz, sendTx, CoinGecko
 │   └── types.ts
 └── routes/
     ├── +layout.svelte            # umami injection, theme init
@@ -221,7 +246,7 @@ If you came here for IPFS upload, that path was removed in favor of users handli
 
 ## Credits
 
-- Spec and original implementation: [0xSylla/Generative-NFT-Art-Metadata-Generator](https://github.com/0xSylla/Generative-NFT-Art-Metadata-Generator)
+- Inspired by [0xSylla/Generative-NFT-Art-Metadata-Generator](https://github.com/0xSylla/Generative-NFT-Art-Metadata-Generator)
 - Design language: [abashoverse](https://abashoverse.com)
 
 ---

@@ -19,6 +19,8 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
   },
   "dependencies": {
+    "@wagmi/connectors": "^5.11.2",
+    "@wagmi/core": "^2.22.1",
     "jszip": "^3.10.1",
     "lucide-svelte": "^0.469.0",
     "viem": "^2.51.0"

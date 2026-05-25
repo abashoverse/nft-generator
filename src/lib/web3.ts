@@ -1,17 +1,38 @@
 import {
+	connect,
+	disconnect,
+	getAccount,
+	getChainId,
+	sendTransaction,
+	signMessage,
+	switchChain
+} from '@wagmi/core';
+import { injected } from '@wagmi/connectors';
+import {
 	createPublicClient,
-	createWalletClient,
-	custom,
 	http,
 	parseEther,
 	verifyMessage,
 	type Address,
-	type Chain,
 	type Hex
 } from 'viem';
 import { mainnet, base } from 'viem/chains';
+import { wagmiConfig, injectedConnector, mainnetTransport } from './wagmi';
 
 export type SupportedChain = 'mainnet' | 'base';
+
+// EIP-6963: each modern wallet extension announces itself with this shape so
+// we can show a picker instead of fighting over window.ethereum.
+export interface Eip6963ProviderInfo {
+	uuid: string;
+	name: string;
+	icon: string;
+	rdns: string;
+}
+export interface Eip6963DetectedWallet {
+	info: Eip6963ProviderInfo;
+	provider: unknown;
+}
 
 const erc721Abi = [
 	{
@@ -49,11 +70,8 @@ const delegateRegistryAbi = [
 	}
 ] as const;
 
-// Empty rights (bytes32(0)) means the delegator granted general / all rights.
 const EMPTY_RIGHTS = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
-// Delegation type enum from the V2 registry:
-// 0 NONE, 1 ALL, 2 CONTRACT, 3 ERC721, 4 ERC20, 5 ERC1155
 interface RawDelegation {
 	type_: number;
 	to: Address;
@@ -64,32 +82,73 @@ interface RawDelegation {
 	amount: bigint;
 }
 
-function chainFor(key: SupportedChain): Chain {
-	return key === 'mainnet' ? mainnet : base;
-}
-
-function getProvider(): {
-	request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-} | null {
-	if (typeof window === 'undefined') return null;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	return ((window as any).ethereum as ReturnType<typeof getProvider>) ?? null;
-}
-
 const mainnetPublic = createPublicClient({
 	chain: mainnet,
-	transport: http()
+	transport: mainnetTransport
 });
 
-export async function connectWallet(): Promise<Address | null> {
-	const provider = getProvider();
-	if (!provider) {
-		throw new Error('No Ethereum wallet detected. Install MetaMask or another EVM wallet.');
-	}
-	const accounts = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
-	return (accounts[0] as Address) ?? null;
+// Connect via a plain injected provider (whichever wallet hijacked window.ethereum).
+// Use this as a fallback when EIP-6963 announce didn't fire. We force mainnet
+// during connect because the holder check reads mainnet contracts and the
+// SIWE message bakes the current chainId into its body.
+export async function connectInjected(): Promise<Address | null> {
+	const result = await connect(wagmiConfig, {
+		connector: injectedConnector,
+		chainId: mainnet.id
+	});
+	await ensureMainnet();
+	return (result.accounts[0] as Address) ?? null;
 }
 
+// Connect to a specific wallet announced via EIP-6963. Avoids the collision
+// where two extensions both want to be window.ethereum.
+export async function connectSpecificWallet(
+	wallet: Eip6963DetectedWallet
+): Promise<Address | null> {
+	try {
+		await disconnect(wagmiConfig);
+	} catch {
+		// nothing was connected; fine
+	}
+	const connector = injected({
+		target: () => ({
+			id: wallet.info.rdns,
+			name: wallet.info.name,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			provider: wallet.provider as any
+		})
+	});
+	const result = await connect(wagmiConfig, { connector, chainId: mainnet.id });
+	await ensureMainnet();
+	return (result.accounts[0] as Address) ?? null;
+}
+
+// Some wallets ignore the chainId option on connect, so we double-check after
+// and request the switch explicitly. No-op if already on mainnet.
+async function ensureMainnet(): Promise<void> {
+	if (getChainId(wagmiConfig) === mainnet.id) return;
+	try {
+		await switchChain(wagmiConfig, { chainId: mainnet.id });
+	} catch (err) {
+		console.warn('[web3] could not switch to mainnet after connect', err);
+	}
+}
+
+export async function disconnectWallet(): Promise<void> {
+	try {
+		await disconnect(wagmiConfig);
+	} catch {
+		// already disconnected
+	}
+}
+
+export function currentConnectedAddress(): Address | null {
+	return getAccount(wagmiConfig).address ?? null;
+}
+
+// Hand-rolled EIP-4361 message. We skip the `siwe` library because its CJS
+// source has a top-level require('ethers') that breaks esbuild bundling.
+// The wire format is the same; viem's verifyMessage does the actual sig math.
 function buildSiweMessage(address: Address, nonce: string, chainId: number): string {
 	const domain = window.location.host;
 	const origin = window.location.origin;
@@ -107,16 +166,10 @@ Issued At: ${issuedAt}`;
 }
 
 export async function signSiwe(address: Address): Promise<boolean> {
-	const provider = getProvider();
-	if (!provider) throw new Error('No wallet.');
-	const chainIdHex = (await provider.request({ method: 'eth_chainId' })) as string;
-	const chainId = parseInt(chainIdHex, 16);
+	const chainId = getChainId(wagmiConfig);
 	const nonce = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
 	const message = buildSiweMessage(address, nonce, chainId);
-	const signature = (await provider.request({
-		method: 'personal_sign',
-		params: [message, address]
-	})) as Hex;
+	const signature = (await signMessage(wagmiConfig, { message })) as Hex;
 	return verifyMessage({ address, message, signature });
 }
 
@@ -136,8 +189,8 @@ export async function readNftBalance(
 
 // Returns the unique set of vault wallets that have delegated to `walletAddress`
 // with general rights (bytes32(0)) for any of the provided NFT contracts, or
-// for everything (ALL type). Used to let cold-wallet holders verify via
-// delegate.xyz without moving NFTs.
+// for everything (ALL type). Lets cold-wallet holders verify via delegate.xyz
+// without moving NFTs.
 export async function getDelegatedVaults(
 	walletAddress: Address,
 	relevantContracts: Address[]
@@ -169,40 +222,6 @@ export async function getDelegatedVaults(
 	}
 }
 
-async function ensureChain(chainKey: SupportedChain): Promise<void> {
-	const provider = getProvider();
-	if (!provider) throw new Error('No wallet.');
-	const target = chainFor(chainKey);
-	const currentHex = (await provider.request({ method: 'eth_chainId' })) as string;
-	if (parseInt(currentHex, 16) === target.id) return;
-
-	try {
-		await provider.request({
-			method: 'wallet_switchEthereumChain',
-			params: [{ chainId: `0x${target.id.toString(16)}` }]
-		});
-	} catch (err) {
-		// 4902 = chain not added to wallet; only add Base, mainnet is always present.
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		if ((err as any)?.code === 4902 && chainKey === 'base') {
-			await provider.request({
-				method: 'wallet_addEthereumChain',
-				params: [
-					{
-						chainId: `0x${base.id.toString(16)}`,
-						chainName: base.name,
-						nativeCurrency: base.nativeCurrency,
-						rpcUrls: ['https://mainnet.base.org'],
-						blockExplorerUrls: ['https://basescan.org']
-					}
-				]
-			});
-		} else {
-			throw err;
-		}
-	}
-}
-
 export async function getEthUsdPrice(): Promise<number> {
 	const res = await fetch(
 		'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd'
@@ -223,20 +242,13 @@ export async function sendPayment(
 	receiver: Address,
 	amountEth: string
 ): Promise<Hex> {
-	const provider = getProvider();
-	if (!provider) throw new Error('No wallet.');
-
-	await ensureChain(chainKey);
-
-	const walletClient = createWalletClient({
-		chain: chainFor(chainKey),
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		transport: custom(provider as any)
-	});
-	const [account] = await walletClient.requestAddresses();
-	return walletClient.sendTransaction({
-		account,
+	const targetChainId = chainKey === 'mainnet' ? mainnet.id : base.id;
+	if (getChainId(wagmiConfig) !== targetChainId) {
+		await switchChain(wagmiConfig, { chainId: targetChainId });
+	}
+	return sendTransaction(wagmiConfig, {
 		to: receiver,
-		value: parseEther(amountEth)
+		value: parseEther(amountEth),
+		chainId: targetChainId
 	});
 }
