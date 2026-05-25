@@ -12,9 +12,13 @@
 
 	let { busy = $bindable(false) }: Props = $props();
 
+	const PREVIEW_LIMIT = 50;
+
 	const collection = $derived(generator.collection);
 	const size = $derived(generator.config.size);
 	const layers = $derived(generator.layers);
+	const previewItems = $derived(collection.slice(0, PREVIEW_LIMIT));
+	const truncated = $derived(collection.length > PREVIEW_LIMIT);
 
 	function buildCollection() {
 		busy = true;
@@ -62,9 +66,14 @@
 		<div
 			class="grid max-h-[56vh] grid-cols-2 gap-3 overflow-y-auto pr-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
 		>
-			{#each collection as combo, idx (idx)}
+			{#each previewItems as combo, idx (idx)}
 				<PreviewItem {combo} index={idx} />
 			{/each}
 		</div>
+		{#if truncated}
+			<p class="font-body text-center text-xs italic text-muted">
+				Showing first {PREVIEW_LIMIT} of {collection.length}. The full collection exports in step 4.
+			</p>
+		{/if}
 	{/if}
 </section>
