@@ -25,15 +25,15 @@
 			disabled={!reachable}
 			onclick={() => reachable && onJump?.(s.n)}
 			aria-label={`Jump to step ${s.n}: ${s.label}`}
-			class="font-brains-medium group flex flex-col items-center gap-1 rounded px-2 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-ink/5"
+			class="font-brains-medium group flex flex-col items-center gap-1 rounded-md px-2 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-50 enabled:hover:bg-ink/5"
 		>
 			<span
-				class="flex h-8 w-8 items-center justify-center rounded border text-[12px] font-bold transition-colors
+				class="flex h-8 w-8 items-center justify-center rounded-md border-2 text-[12px] font-bold transition-colors
 				{isActive
 					? 'border-ink bg-ink text-on-ink'
 					: isDone
 						? 'border-ink bg-transparent text-ink'
-						: 'border-border bg-lcd-light text-muted'}"
+						: 'border-ink/30 bg-surface text-muted'}"
 			>
 				{isDone ? '✓' : s.n}
 			</span>
@@ -47,7 +47,7 @@
 		{#if idx < steps.length - 1}
 			<span
 				class="h-px w-6 transition-colors
-				{current > s.n ? 'bg-ink' : 'bg-border/40'}"
+				{current > s.n ? 'bg-ink' : 'bg-ink/20'}"
 				aria-hidden="true"
 			></span>
 		{/if}

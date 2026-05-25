@@ -4,16 +4,17 @@
 	import type { HTMLButtonAttributes } from 'svelte/elements';
 
 	const button = tv({
-		base: 'font-body inline-flex cursor-pointer items-center justify-center gap-2 rounded font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-lcd disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-50',
+		base: 'font-brains-medium inline-flex cursor-pointer items-center justify-center gap-2 rounded-md uppercase tracking-wider transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:ring-offset-charcoal disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-50',
 		variants: {
 			variant: {
 				primary:
-					'border border-ink bg-ink text-on-ink hover:bg-transparent hover:text-ink',
-				secondary: 'border border-border bg-transparent text-ink hover:bg-ink/10',
-				outline: 'border border-border bg-transparent text-ink hover:border-ink',
-				ghost: 'text-ink hover:bg-ink/10',
+					'border-2 border-ink bg-ink text-on-ink hover:bg-charcoal hover:text-ink',
+				secondary:
+					'border-2 border-ink bg-transparent text-ink hover:bg-ink hover:text-on-ink',
+				outline: 'border-2 border-border bg-transparent text-ink hover:border-ink',
+				ghost: 'border-2 border-transparent text-ink hover:border-ink',
 				destructive:
-					'border border-red-600 bg-red-600 text-white hover:bg-transparent hover:text-red-600'
+					'border-2 border-red-600 bg-red-600 text-white hover:bg-transparent hover:text-red-600'
 			},
 			size: {
 				sm: 'h-8 px-3 text-xs',

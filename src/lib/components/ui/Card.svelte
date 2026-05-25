@@ -4,7 +4,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 
 	const card = tv({
-		base: 'rounded border-2 border-border bg-lcd',
+		base: 'rounded-lg border-2 border-ink bg-surface',
 		variants: {
 			padding: {
 				none: '',
@@ -15,10 +15,10 @@
 			variant: {
 				default: '',
 				inset: 'shadow-[inset_0_1px_3px_rgba(0,0,0,0.1)]',
-				panel: 'bg-lcd-light'
+				panel: ''
 			},
 			hover: {
-				true: 'cursor-pointer transition-colors hover:bg-lcd-light',
+				true: 'group cursor-pointer transition-colors duration-200 ease-out hover:bg-ink hover:text-on-ink',
 				false: ''
 			}
 		},

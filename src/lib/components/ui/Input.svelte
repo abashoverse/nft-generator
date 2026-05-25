@@ -3,11 +3,11 @@
 	import type { HTMLInputAttributes } from 'svelte/elements';
 
 	const input = tv({
-		base: 'font-body w-full rounded border bg-lcd-light px-3 py-2 text-sm text-ink transition-colors placeholder:text-muted focus:outline-none focus:border-ink focus:ring-1 focus:ring-ink disabled:cursor-not-allowed disabled:opacity-50',
+		base: 'font-body w-full rounded-md border-2 bg-surface px-3 py-2 text-sm text-ink transition-colors placeholder:text-muted/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 focus-visible:ring-offset-1 focus-visible:ring-offset-charcoal disabled:cursor-not-allowed disabled:opacity-50',
 		variants: {
 			variant: {
-				default: 'border-border',
-				error: 'border-red-500 focus:border-red-500 focus:ring-red-500'
+				default: 'border-ink',
+				error: 'border-red-500 focus-visible:ring-red-500/40'
 			},
 			inputSize: {
 				sm: 'h-8 text-xs',

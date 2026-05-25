@@ -1,19 +1,14 @@
 <script lang="ts">
 	import JSZip from 'jszip';
 	import { generator } from '$lib/stores/generator.svelte';
-	import { pinFileToIPFS, createIPFSFormData } from '$lib/utils/ipfs';
+	import { paywall, FREE_TIER_EXPORT_PX } from '$lib/paywall.svelte';
 	import type { Metadata } from '$lib/types';
-	import {
-		Download,
-		Rocket,
-		Shield,
-		ExternalLink,
-		Loader2,
-		CheckCircle2
-	} from 'lucide-svelte';
+	import { Download, Loader2, CheckCircle2, Lock } from 'lucide-svelte';
 	import Card from './ui/Card.svelte';
 	import Input from './ui/Input.svelte';
 	import Button from './ui/Button.svelte';
+	import Pill from './ui/Pill.svelte';
+	import PaywallModal from './PaywallModal.svelte';
 
 	interface Props {
 		busy?: boolean;
@@ -21,15 +16,36 @@
 
 	let { busy = $bindable(false) }: Props = $props();
 
-	let pinataJwt = $state('');
 	let progress = $state(0);
 	let status = $state('');
 	let isExporting = $state(false);
-	let ipfsResult = $state<{ imagesCID: string; metadataCID: string } | null>(null);
+	let showPaywall = $state(false);
 
 	const config = $derived(generator.config);
 	const collection = $derived(generator.collection);
 	const layers = $derived(generator.layers);
+	const exportSize = $derived(
+		paywall.unlocked
+			? Math.max(1, Math.min(8192, config.exportSize || 1000))
+			: FREE_TIER_EXPORT_PX
+	);
+
+	const sourceHint = $derived.by(() => {
+		const ts = layers.flatMap((l) => l.traits).filter((t) => t.width && t.height);
+		if (ts.length === 0) return null;
+		const sizes = new Set(ts.map((t) => `${t.width}×${t.height}`));
+		if (sizes.size === 1) return [...sizes][0];
+		return `${sizes.size} mixed sizes`;
+	});
+
+	const sourceSquare = $derived.by(() => {
+		const ts = layers.flatMap((l) => l.traits).filter((t) => t.width && t.height);
+		if (ts.length === 0) return null;
+		const sizes = new Set(ts.map((t) => `${t.width}×${t.height}`));
+		if (sizes.size !== 1) return null;
+		const t = ts[0];
+		return t.width === t.height ? t.width! : null;
+	});
 
 	function syncBusy() {
 		busy = isExporting;
@@ -47,12 +63,12 @@
 			const metadataFolder = zip.folder('metadata');
 
 			const canvas = document.createElement('canvas');
-			canvas.width = 1000;
-			canvas.height = 1000;
+			canvas.width = exportSize;
+			canvas.height = exportSize;
 
 			for (let i = 0; i < collection.length; i++) {
 				status = `Rendering image ${i + 1}/${collection.length}`;
-				await generator.drawCombo(collection[i], canvas, 1000);
+				await generator.drawCombo(collection[i], canvas, exportSize);
 				const blob = await new Promise<Blob>((res) =>
 					canvas.toBlob((b) => res(b!), 'image/png')
 				);
@@ -94,85 +110,7 @@
 			URL.revokeObjectURL(url);
 
 			progress = 100;
-			status = 'ZIP generated and download started!';
-		} catch (err) {
-			const msg = err instanceof Error ? err.message : String(err);
-			status = `Error: ${msg}`;
-		} finally {
-			isExporting = false;
-			syncBusy();
-		}
-	}
-
-	async function uploadToIPFS() {
-		if (!pinataJwt) {
-			alert('Please enter your Pinata JWT Token');
-			return;
-		}
-
-		isExporting = true;
-		syncBusy();
-		progress = 0;
-		status = 'Preparing files for IPFS upload...';
-
-		try {
-			const canvas = document.createElement('canvas');
-			canvas.width = 1000;
-			canvas.height = 1000;
-
-			const imageFiles: File[] = [];
-
-			for (let i = 0; i < collection.length; i++) {
-				status = `Preparing image ${i + 1}/${collection.length}`;
-				await generator.drawCombo(collection[i], canvas, 1000);
-				const blob = await new Promise<Blob>((res) =>
-					canvas.toBlob((b) => res(b!), 'image/png')
-				);
-				imageFiles.push(new File([blob], `${i}.png`, { type: 'image/png' }));
-				progress = ((i + 1) / collection.length) * 30;
-			}
-
-			status = 'Uploading images to IPFS...';
-			const imgFormData = createIPFSFormData(imageFiles, 'images', `${config.name} - Images`);
-			const imgResult = await pinFileToIPFS(imgFormData, pinataJwt);
-			const imagesCID = imgResult.IpfsHash;
-			progress = 40;
-
-			const metaFiles: File[] = [];
-			for (let i = 0; i < collection.length; i++) {
-				const attributes = collection[i].map((trait, idx) => ({
-					trait_type: layers[idx].name,
-					value: trait.replace(/\.[^/.]+$/, '')
-				}));
-
-				const meta: Metadata = {
-					name: `${config.name} #${i}`,
-					description: config.description,
-					image: `ipfs://${imagesCID}/${i}.png`,
-					attributes
-				};
-
-				if (config.soulbound) {
-					meta.soulbound = true;
-					meta.attributes.push({ trait_type: 'Soulbound', value: 'Yes' });
-				}
-
-				const blob = new Blob([JSON.stringify(meta, null, 2)], { type: 'application/json' });
-				metaFiles.push(new File([blob], `${i}.json`, { type: 'application/json' }));
-			}
-
-			status = 'Uploading metadata to IPFS...';
-			const metaFormData = createIPFSFormData(
-				metaFiles,
-				'metadata',
-				`${config.name} - Metadata`
-			);
-			const metaResult = await pinFileToIPFS(metaFormData, pinataJwt);
-			const metadataCID = metaResult.IpfsHash;
-
-			ipfsResult = { imagesCID, metadataCID };
-			progress = 100;
-			status = 'Collection uploaded to IPFS successfully!';
+			status = 'ZIP generated and download started.';
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			status = `Error: ${msg}`;
@@ -183,7 +121,7 @@
 	}
 </script>
 
-<div class="animate-in space-y-6">
+<section class="animate-in space-y-6 rounded-lg border-2 border-ink bg-surface p-5 md:p-7">
 	<header class="border-border border-b pb-4">
 		<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">
 			Step 4 · Export
@@ -194,76 +132,93 @@
 	<div class="grid gap-6 md:grid-cols-2">
 		<section class="space-y-4">
 			<Card padding="md" variant="panel">
-				<p
-					class="font-brains-medium mb-3 flex items-center gap-2 text-[10px] uppercase tracking-widest text-ink"
-				>
-					<Shield class="h-3.5 w-3.5" /> Pinata configuration
-				</p>
-				<div class="space-y-2">
-					<label for="pinataJwt" class="font-brains-medium text-xs uppercase tracking-wider text-muted">
-						JWT token
-					</label>
-					<Input
-						id="pinataJwt"
-						type="password"
-						placeholder="Paste your JWT here..."
-						value={pinataJwt}
-						oninput={(e) => (pinataJwt = e.currentTarget.value)}
-					/>
-					<p class="font-body text-xs text-muted">
-						Required for IPFS upload. Get it from
-						<a
-							href="https://pinata.cloud"
-							target="_blank"
-							rel="noreferrer"
-							class="text-ink underline-offset-2 hover:underline">pinata.cloud</a
-						>.
+				<div class="mb-3 flex items-center gap-2">
+					<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">
+						Export resolution
 					</p>
+					{#if !paywall.unlocked}
+						<Pill tone="muted">
+							<Lock class="h-2.5 w-2.5" /> Free tier
+						</Pill>
+					{/if}
 				</div>
+				{#if paywall.unlocked}
+					<div class="space-y-2">
+						<div class="flex items-center gap-2">
+							<Input
+								id="exportSize"
+								type="number"
+								min={1}
+								max={8192}
+								value={config.exportSize}
+								oninput={(e) =>
+									generator.updateConfig({
+										exportSize: parseInt(e.currentTarget.value) || 1000
+									})}
+								class="w-32"
+							/>
+							<span class="font-mono text-xs text-muted">px²</span>
+							{#if sourceSquare && sourceSquare !== config.exportSize}
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={() => generator.updateConfig({ exportSize: sourceSquare! })}
+								>
+									Match source
+								</Button>
+							{/if}
+						</div>
+						{#if sourceHint}
+							<p class="font-body text-xs text-muted">
+								Source: {sourceHint}. Match it for lossless output, go higher to upscale, lower to
+								downscale.
+							</p>
+						{/if}
+					</div>
+				{:else}
+					<div class="space-y-3">
+						<div class="flex items-baseline gap-2">
+							<span class="font-mono text-2xl text-ink">{FREE_TIER_EXPORT_PX}</span>
+							<span class="font-mono text-xs text-muted">px²</span>
+						</div>
+						<p class="font-body text-xs text-muted">
+							Free tier caps exports at {FREE_TIER_EXPORT_PX}×{FREE_TIER_EXPORT_PX}. Unlock custom
+							resolutions by holding an abasho/abashos NFT, paying once, or self-hosting.
+						</p>
+						<Button
+							variant="primary"
+							size="sm"
+							class="w-full"
+							onclick={() => (showPaywall = true)}
+						>
+							Unlock custom resolution
+						</Button>
+					</div>
+				{/if}
 			</Card>
 
-			<div class="space-y-3">
-				<Button
-					variant="primary"
-					size="lg"
-					onclick={generateZip}
-					disabled={isExporting}
-					class="w-full"
-				>
-					{#if isExporting}
-						<Loader2 class="h-4 w-4 spin" />
-					{:else}
-						<Download class="h-4 w-4" />
-					{/if}
-					Generate &amp; download ZIP
-				</Button>
-				<Button
-					variant="outline"
-					size="lg"
-					onclick={uploadToIPFS}
-					disabled={isExporting || !pinataJwt}
-					class="w-full"
-				>
-					{#if isExporting}
-						<Loader2 class="h-4 w-4 spin" />
-					{:else}
-						<Rocket class="h-4 w-4" />
-					{/if}
-					Upload to IPFS (Pinata)
-				</Button>
-			</div>
+			<Button
+				variant="primary"
+				size="lg"
+				onclick={generateZip}
+				disabled={isExporting}
+				class="w-full"
+			>
+				{#if isExporting}
+					<Loader2 class="h-4 w-4 spin" />
+				{:else}
+					<Download class="h-4 w-4" />
+				{/if}
+				Generate &amp; download ZIP
+			</Button>
 		</section>
 
 		<section class="space-y-4">
 			<Card padding="md" variant="panel" class="flex min-h-[300px] flex-col">
-				<p
-					class="font-brains-medium mb-3 text-[10px] uppercase tracking-widest text-muted"
-				>
+				<p class="font-brains-medium mb-3 text-[10px] uppercase tracking-widest text-muted">
 					Process status
 				</p>
-				<div
-					class="font-mono mb-3 flex-1 space-y-1.5 overflow-y-auto text-[11px] text-ink"
-				>
+				<div class="font-mono mb-3 flex-1 space-y-1.5 overflow-y-auto text-[11px] text-ink">
 					<p class="text-muted">$ initialising_engine...</p>
 					{#if status}
 						<p class="text-ink">&gt; {status}</p>
@@ -275,7 +230,7 @@
 						</div>
 					{/if}
 				</div>
-				<div class="border-border h-2 overflow-hidden rounded-sm border bg-lcd">
+				<div class="border-ink h-2 overflow-hidden rounded-sm border-2 bg-surface">
 					<div
 						class="h-full bg-ink transition-all duration-300"
 						style="width: {progress}%"
@@ -285,45 +240,8 @@
 					{Math.round(progress)}%
 				</p>
 			</Card>
-
-			{#if ipfsResult}
-				<Card
-					padding="md"
-					class="animate-in border-emerald-600/40 bg-emerald-500/5"
-				>
-					<p
-						class="font-brains-medium mb-3 text-[11px] uppercase tracking-widest text-emerald-700 dark:text-emerald-400"
-					>
-						✓ Deployment successful
-					</p>
-					<div class="space-y-3">
-						<div>
-							<span class="font-brains-medium block text-[10px] uppercase tracking-wider text-muted">
-								Images CID
-							</span>
-							<code
-								class="border-border bg-lcd mt-1 block break-all rounded border px-2 py-1.5 font-mono text-[11px] text-ink"
-							>{ipfsResult.imagesCID}</code>
-						</div>
-						<div>
-							<span class="font-brains-medium block text-[10px] uppercase tracking-wider text-muted">
-								Metadata CID (base URI)
-							</span>
-							<code
-								class="border-border bg-lcd mt-1 block break-all rounded border px-2 py-1.5 font-mono text-[11px] text-ink"
-							>ipfs://{ipfsResult.metadataCID}/</code>
-						</div>
-						<a
-							href={`https://gateway.pinata.cloud/ipfs/${ipfsResult.metadataCID}/0.json`}
-							target="_blank"
-							rel="noreferrer"
-							class="font-brains-medium inline-flex items-center gap-1.5 text-xs text-emerald-700 hover:underline dark:text-emerald-400"
-						>
-							<ExternalLink class="h-3 w-3" /> View sample on IPFS gateway
-						</a>
-					</div>
-				</Card>
-			{/if}
 		</section>
 	</div>
-</div>
+
+	<PaywallModal open={showPaywall} onClose={() => (showPaywall = false)} />
+</section>

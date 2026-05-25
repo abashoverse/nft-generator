@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Button from './ui/Button.svelte';
+	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 
 	interface Props {
 		onBack?: () => void;
@@ -14,8 +15,8 @@
 	let {
 		onBack,
 		onNext,
-		backLabel = '← Back',
-		nextLabel = 'Continue →',
+		backLabel = 'Back',
+		nextLabel = 'Continue',
 		nextDisabled = false,
 		nextReason = '',
 		busy = false
@@ -23,17 +24,20 @@
 </script>
 
 <div
-	class="bg-lcd/90 border-border grid grid-cols-[1fr_auto_1fr] items-center gap-4 border-t-2 px-6 py-3 backdrop-blur-sm"
+	class="grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-4 py-3 md:px-5"
 >
 	<div class="flex items-center">
 		{#if onBack}
-			<Button variant="outline" size="md" onclick={onBack} disabled={busy}>{backLabel}</Button>
+			<Button variant="outline" size="md" onclick={onBack} disabled={busy}>
+				<ChevronLeft class="h-4 w-4" />
+				{backLabel}
+			</Button>
 		{/if}
 	</div>
 
 	<div class="text-center text-xs font-brains-medium text-muted" aria-live="polite">
 		{#if nextDisabled && nextReason}
-			<span class="text-amber-700 dark:text-amber-400">⚠ {nextReason}</span>
+			<span class="text-amber-700 dark:text-amber-400">{nextReason}</span>
 		{/if}
 	</div>
 
@@ -47,6 +51,7 @@
 				title={nextReason}
 			>
 				{nextLabel}
+				<ChevronRight class="h-4 w-4" />
 			</Button>
 		{/if}
 	</div>

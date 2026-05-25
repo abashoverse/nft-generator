@@ -21,7 +21,7 @@
 	}: Props = $props();
 
 	const base =
-		'relative inline-flex h-10 w-10 items-center justify-center rounded border border-transparent text-muted transition-colors hover:border-border hover:bg-lcd-light hover:text-ink disabled:opacity-50 disabled:cursor-not-allowed';
+		'relative inline-flex h-10 w-10 items-center justify-center rounded-md border-2 border-transparent text-muted transition-colors duration-200 ease-out hover:border-ink hover:bg-ink hover:text-on-ink disabled:opacity-50 disabled:cursor-not-allowed';
 </script>
 
 <button

@@ -9,6 +9,9 @@
 
 	let folderInput = $state<HTMLInputElement | null>(null);
 	let isCheckingDimensions = $state(false);
+	let isDragging = $state(false);
+
+	type FileWithPath = { file: File; relativePath: string };
 
 	const config = $derived(generator.config);
 	const layers = $derived(generator.layers);
@@ -27,19 +30,19 @@
 	);
 	const dimensionsConsistent = $derived(dimensionsLoaded && uniqueDimensions.length <= 1);
 
-	function handleFolderChange(e: Event) {
-		const input = e.currentTarget as HTMLInputElement;
-		const files = Array.from(input.files ?? []);
-		if (files.length === 0) return;
-
+	function processFolderFiles(items: FileWithPath[]) {
 		const temp: Record<string, File[]> = {};
 
-		for (const file of files) {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const rel = (file as any).webkitRelativePath as string;
-			const parts = rel.split('/');
-			if (parts.length < 3) continue;
-			const layerName = parts[1];
+		for (const { file, relativePath } of items) {
+			const parts = relativePath.split('/').filter(Boolean);
+			let layerName: string;
+			if (parts.length >= 3) {
+				layerName = parts[1];
+			} else if (parts.length === 2) {
+				layerName = parts[0];
+			} else {
+				continue;
+			}
 			if (!temp[layerName]) temp[layerName] = [];
 			temp[layerName].push(file);
 		}
@@ -52,8 +55,84 @@
 			};
 		});
 
+		if (newLayers.length === 0) return;
 		generator.setLayers(newLayers);
 		loadDimensions(newLayers);
+	}
+
+	function handleFolderChange(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const files = Array.from(input.files ?? []);
+		if (files.length === 0) return;
+
+		const items: FileWithPath[] = files.map((file) => ({
+			file,
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			relativePath: (file as any).webkitRelativePath as string
+		}));
+
+		processFolderFiles(items);
+	}
+
+	async function readEntry(
+		entry: FileSystemEntry,
+		basePath: string
+	): Promise<FileWithPath[]> {
+		const fullPath = basePath ? `${basePath}/${entry.name}` : entry.name;
+		if (entry.isFile) {
+			const file = await new Promise<File>((resolve, reject) => {
+				(entry as FileSystemFileEntry).file(resolve, reject);
+			});
+			return [{ file, relativePath: fullPath }];
+		}
+		if (entry.isDirectory) {
+			const reader = (entry as FileSystemDirectoryEntry).createReader();
+			const collected: FileSystemEntry[] = [];
+			const readBatch = (): Promise<void> =>
+				new Promise((resolve) =>
+					reader.readEntries((batch) => {
+						if (batch.length === 0) resolve();
+						else {
+							collected.push(...batch);
+							readBatch().then(resolve);
+						}
+					})
+				);
+			await readBatch();
+			const nested = await Promise.all(collected.map((child) => readEntry(child, fullPath)));
+			return nested.flat();
+		}
+		return [];
+	}
+
+	async function handleDrop(e: DragEvent) {
+		e.preventDefault();
+		isDragging = false;
+
+		const items = e.dataTransfer?.items;
+		if (!items || items.length === 0) return;
+
+		const entries: FileSystemEntry[] = [];
+		for (let i = 0; i < items.length; i++) {
+			const entry = items[i].webkitGetAsEntry();
+			if (entry) entries.push(entry);
+		}
+
+		if (entries.length === 0) return;
+
+		const dropped = (await Promise.all(entries.map((entry) => readEntry(entry, '')))).flat();
+		if (dropped.length === 0) return;
+
+		processFolderFiles(dropped);
+	}
+
+	function handleDragOver(e: DragEvent) {
+		e.preventDefault();
+		isDragging = true;
+	}
+
+	function handleDragLeave(e: DragEvent) {
+		if (e.currentTarget === e.target) isDragging = false;
 	}
 
 	function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
@@ -123,7 +202,7 @@
 	}
 </script>
 
-<div class="animate-in space-y-6">
+<section class="animate-in space-y-6 rounded-lg border-2 border-ink bg-surface p-5 md:p-7">
 	<header class="border-border flex items-center justify-between border-b pb-4">
 		<div>
 			<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">
@@ -183,18 +262,32 @@
 		</span>
 		<button
 			type="button"
-			class="group hover:border-ink flex w-full flex-col items-center justify-center gap-3 rounded border bg-lcd-light px-6 py-10 text-center text-sm text-ink transition-colors
-			{layers.length > 0 ? 'border-ink bg-ink/5' : 'border-ink/25'}"
+			class="group hover:border-ink flex w-full flex-col items-center justify-center gap-3 rounded-lg border-2 bg-surface px-6 py-10 text-center text-sm text-ink transition-colors duration-200 ease-out
+			{isDragging
+				? 'border-ink bg-ink/[0.12]'
+				: layers.length > 0
+					? 'border-ink bg-ink/[0.08]'
+					: 'border-ink/30'}"
 			onclick={() => folderInput?.click()}
+			ondragover={handleDragOver}
+			ondragenter={handleDragOver}
+			ondragleave={handleDragLeave}
+			ondrop={handleDrop}
 		>
-			<Upload class="h-9 w-9 {layers.length > 0 ? 'text-ink' : 'text-muted'}" />
-			{#if layers.length > 0}
+			<Upload
+				class="h-9 w-9 {isDragging || layers.length > 0 ? 'text-ink' : 'text-muted'}"
+			/>
+			{#if isDragging}
+				<span class="font-brains-medium text-xs uppercase tracking-wider text-ink">
+					Drop to load layers
+				</span>
+			{:else if layers.length > 0}
 				<span class="font-brains-medium text-xs uppercase tracking-wider text-ink">
 					✓ {layers.length} layers · {totalAssets} assets loaded
 				</span>
 			{:else}
 				<span class="font-body text-sm text-muted">
-					Click to select your layers folder
+					Drop your layers folder here, or click to browse
 				</span>
 			{/if}
 			<input
@@ -207,13 +300,13 @@
 			/>
 		</button>
 		<p class="font-body text-xs text-muted">
-			Pick a folder containing subfolders (one per layer) of PNG/SVG traits. Top folder name is ignored.
+			Folder structure: one subfolder per layer, each containing PNG/SVG traits. Dropping the folder avoids the browser's batch-upload prompt; clicking triggers it.
 		</p>
 
 		{#if layers.length > 0}
 			{#if isCheckingDimensions}
 				<div
-					class="border-ink/25 bg-lcd-light flex items-center gap-2 rounded border px-3 py-2 text-xs text-muted"
+					class="border-ink/30 bg-surface flex items-center gap-2 rounded-md border-2 px-3 py-2 text-xs text-muted"
 				>
 					<Loader2 class="h-3.5 w-3.5 spin" /> Checking image dimensions…
 				</div>
@@ -289,7 +382,7 @@
 						type="file"
 						accept="image/*"
 						onchange={handlePreRevealImage}
-						class="font-body w-full rounded border border-border bg-lcd-light px-3 py-2 text-xs text-ink file:mr-3 file:rounded file:border-0 file:bg-ink file:px-3 file:py-1 file:text-on-ink"
+						class="font-body w-full rounded-md border-2 border-ink bg-surface px-3 py-2 text-xs text-ink file:mr-3 file:rounded-md file:border-0 file:bg-ink file:px-3 file:py-1 file:text-on-ink"
 					/>
 					{#if config.preRevealImage}
 						<p class="font-brains-medium text-[11px] text-emerald-700 dark:text-emerald-400">
@@ -309,7 +402,7 @@
 						type="file"
 						accept="video/*,image/gif"
 						onchange={handlePreRevealAnimation}
-						class="font-body w-full rounded border border-border bg-lcd-light px-3 py-2 text-xs text-ink file:mr-3 file:rounded file:border-0 file:bg-ink file:px-3 file:py-1 file:text-on-ink"
+						class="font-body w-full rounded-md border-2 border-ink bg-surface px-3 py-2 text-xs text-ink file:mr-3 file:rounded-md file:border-0 file:bg-ink file:px-3 file:py-1 file:text-on-ink"
 					/>
 					{#if config.preRevealAnimation}
 						<p class="font-brains-medium text-[11px] text-emerald-700 dark:text-emerald-400">
@@ -337,4 +430,4 @@
 			</div>
 		</label>
 	</Card>
-</div>
+</section>

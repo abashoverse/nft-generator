@@ -33,13 +33,16 @@
 	});
 </script>
 
-<div class="animate-in space-y-6">
-	<header class="border-border flex items-center justify-between gap-3 border-b pb-4">
+<section class="animate-in space-y-6 rounded-lg border-2 border-ink bg-surface p-5 md:p-7">
+	<header class="border-border flex items-start justify-between gap-3 border-b pb-4">
 		<div>
 			<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">
 				Step 3 · Preview
 			</p>
 			<h2 class="font-array-semi mt-1 text-2xl text-ink">Collection preview</h2>
+			<p class="mt-2 max-w-2xl font-body text-xs text-muted">
+				Thumbnails render at low resolution for speed. Exports use the resolution you set in step 4.
+			</p>
 		</div>
 		<div class="flex items-center gap-3">
 			<Button variant="secondary" size="sm" onclick={buildCollection} disabled={busy}>
@@ -64,4 +67,4 @@
 			{/each}
 		</div>
 	{/if}
-</div>
+</section>

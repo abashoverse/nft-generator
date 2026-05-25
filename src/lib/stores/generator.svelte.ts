@@ -14,6 +14,7 @@ function createGeneratorStore() {
 		name: '',
 		description: '',
 		size: 10,
+		exportSize: 1000,
 		usePreReveal: false,
 		preRevealImage: null,
 		preRevealAnimation: null,
@@ -51,7 +52,17 @@ function createGeneratorStore() {
 	}
 
 	function isValidCombo(combo: string[], rules: IncompatibleRule[]) {
-		return !rules.some((rule) => combo.includes(rule.traitA) && combo.includes(rule.traitB));
+		return !rules.some((rule) => {
+			const allConditionsMatch = rule.conditions.every((cond) => {
+				const layerIdx = layers.findIndex((l) => l.name === cond.layerName);
+				if (layerIdx === -1) return false;
+				return cond.traitNames.includes(combo[layerIdx]);
+			});
+			if (!allConditionsMatch) return false;
+			const blockedIdx = layers.findIndex((l) => l.name === rule.blockedLayer);
+			if (blockedIdx === -1) return false;
+			return combo[blockedIdx] === rule.blockedTrait;
+		});
 	}
 
 	function generateRandomCombo(): string[] {
@@ -69,7 +80,7 @@ function createGeneratorStore() {
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return;
 		ctx.clearRect(0, 0, size, size);
-		for (let i = 0; i < layers.length; i++) {
+		for (let i = layers.length - 1; i >= 0; i--) {
 			const layer = layers[i];
 			const traitName = combo[i];
 			const trait = layer.traits.find((t) => t.file.name === traitName);
@@ -83,7 +94,7 @@ function createGeneratorStore() {
 	async function generatePreview(canvas: HTMLCanvasElement) {
 		if (layers.length === 0) return;
 		const combo = generateRandomCombo();
-		await drawCombo(combo, canvas);
+		await drawCombo(combo, canvas, canvas.width);
 	}
 
 	return {

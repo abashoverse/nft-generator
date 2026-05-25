@@ -2,13 +2,17 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Theme tokens: LCD aesthetic (light mode) */
+/* Theme tokens: abashoverse main-site palette (light mode) */
 @theme {
+	--color-charcoal: #d4ded1;
+	--color-offwhite: #e3eae1;
+	--color-warmgray: #6b6b6b;
+	--color-ink: #1a1a1a;
+
 	--color-lcd: #d4ded1;
 	--color-lcd-light: #e2eae0;
 	--color-lcd-dark: #c5d1c2;
-	--color-ink: #0d0d0d;
-	--color-on-ink: #ffffff;
+	--color-on-ink: #e3eae1;
 	--color-border: #1a1a1a;
 	--color-muted: #6b6b6b;
 
@@ -17,20 +21,32 @@
 	--font-mono: 'JetBrains Mono', monospace;
 
 	--ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+	--ease-in-out-expo: cubic-bezier(0.87, 0, 0.13, 1);
 }
 
-/* Dark mode overrides: inverted LCD */
+:root.dark .bg-surface {
+	background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* Dark mode: inverted, with sage-tinted panel surfaces */
 :root.dark {
-	--color-lcd: #0a0a0a;
-	--color-lcd-light: #141414;
-	--color-lcd-dark: #383838;
+	--color-charcoal: #0a0a0a;
+	--color-offwhite: #383838;
+	--color-warmgray: #0a0a0a;
 	--color-ink: #d4ded1;
-	--color-on-ink: #0a0a0a;
-	--color-border: #d4ded1;
+
+	--color-lcd: #1a1f1a;
+	--color-lcd-light: #252b25;
+	--color-lcd-dark: #0f120f;
+	--color-on-ink: #383838;
+	--color-border: #4a5a4a;
 	--color-muted: #8a9a8a;
 }
 
 @layer utilities {
+	.bg-surface {
+		background-color: rgba(0, 0, 0, 0.04);
+	}
 	.font-display {
 		font-family: var(--font-display);
 	}
@@ -71,7 +87,7 @@ html {
 
 body {
 	font-family: var(--font-body);
-	background-color: var(--color-lcd);
+	background-color: var(--color-charcoal);
 	color: var(--color-ink);
 	min-height: 100vh;
 	overflow-x: hidden;
@@ -81,19 +97,19 @@ body {
 
 ::selection {
 	background-color: var(--color-ink);
-	color: var(--color-on-ink);
+	color: var(--color-charcoal);
 }
 
 ::-webkit-scrollbar {
-	width: 8px;
-	height: 8px;
+	width: 10px;
+	height: 10px;
 }
 ::-webkit-scrollbar-track {
-	background: var(--color-lcd);
+	background: var(--color-charcoal);
 }
 ::-webkit-scrollbar-thumb {
 	background: var(--color-border);
-	border-radius: 2px;
+	border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
 	background: var(--color-ink);
@@ -124,7 +140,6 @@ body {
 	animation: spin 0.9s linear infinite;
 }
 
-/* Hide native file-input chrome on the dropzone hidden input */
 .sr-only {
 	position: absolute;
 	width: 1px;
@@ -137,7 +152,6 @@ body {
 	border-width: 0;
 }
 
-/* Form base styles for native controls used inline */
 input[type='text'],
 input[type='number'],
 input[type='password'],
@@ -152,7 +166,6 @@ textarea {
 	min-height: 88px;
 }
 
-/* Hide native number-input spinners. We render our own +/- controls. */
 input[type='number']::-webkit-outer-spin-button,
 input[type='number']::-webkit-inner-spin-button {
 	-webkit-appearance: none;

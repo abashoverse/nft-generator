@@ -73,66 +73,71 @@
 	const nextLabel = $derived.by(() => {
 		switch (step) {
 			case 1:
-				return 'Configure Layers →';
+				return 'Configure Layers';
 			case 2:
-				return 'Generate Collection →';
+				return 'Generate Collection';
 			case 3:
-				return 'Generate & Export →';
+				return 'Generate & Export';
 			default:
 				return 'Done';
 		}
 	});
 </script>
 
-<div class="grid min-h-screen grid-rows-[auto_1fr_auto] bg-lcd">
-	<header
-		class="bg-lcd/85 border-border sticky top-0 z-30 flex flex-wrap items-center justify-between gap-4 border-b-2 px-4 py-3 backdrop-blur-sm sm:px-8"
-	>
-		<a
-			href="/"
-			class="flex items-center gap-2 rounded px-2 py-1 transition-colors hover:bg-ink/5"
-		>
-			<img src="/OCB.svg" alt="OCB" class="h-8 w-8 dark:invert" />
-			<div class="flex flex-col leading-tight">
-				<span class="font-array-bold text-lg text-ink">nft generator</span>
-				<span class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">
-					Generative Art Engine
-				</span>
+<div class="grid min-h-screen grid-rows-[auto_1fr_auto] bg-charcoal">
+	<header class="sticky top-0 z-50 w-full" aria-label="Top bar">
+		<div class="mx-auto w-full max-w-7xl px-4 py-3 md:px-6 md:py-4">
+			<div
+				class="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-black/[0.08] px-4 py-3 backdrop-blur-md backdrop-saturate-150 dark:bg-white/[0.08] md:px-5"
+			>
+				<a href="/" class="group flex items-center gap-2">
+					<span
+						class="block h-7 w-7 bg-ink md:h-8 md:w-8"
+						style="mask: url('/OCB.svg') no-repeat center / contain; -webkit-mask: url('/OCB.svg') no-repeat center / contain;"
+						aria-hidden="true"
+					></span>
+					<span
+						class="font-display text-base font-semibold tracking-tight text-ink md:text-lg"
+					>
+						nft generator
+					</span>
+				</a>
+
+				<StepIndicator current={step} {maxReached} onJump={jump} />
+
+				<ThemeToggle />
 			</div>
-		</a>
-
-		<StepIndicator current={step} {maxReached} onJump={jump} />
-
-		<div class="flex items-center gap-2">
-			<ThemeToggle />
 		</div>
 	</header>
 
-	<main class="mx-auto flex w-full max-w-6xl flex-col justify-center px-4 py-8 sm:px-6">
-		<section class="border-border bg-lcd rounded-lg border-2">
-			<div class="p-5 sm:p-8">
-				{#if step === 1}
-					<Step1Setup />
-				{:else if step === 2}
-					<Step2Layers />
-				{:else if step === 3}
-					<Step3Preview bind:busy />
-				{:else if step === 4}
-					<Step4Export bind:busy />
-				{/if}
-			</div>
-		</section>
-
+	<main
+		class="mx-auto flex w-full max-w-7xl flex-col justify-center gap-4 px-4 py-2.5 md:px-6 md:py-5"
+	>
+		{#if step === 1}
+			<Step1Setup />
+		{:else if step === 2}
+			<Step2Layers />
+		{:else if step === 3}
+			<Step3Preview bind:busy />
+		{:else if step === 4}
+			<Step4Export bind:busy />
+		{/if}
 	</main>
 
-	<footer class="sticky bottom-0 z-30">
-		<StepNav
-			onBack={step > 1 ? back : undefined}
-			onNext={step < 4 ? next : undefined}
-			{busy}
-			{nextLabel}
-			nextDisabled={!!blockReason()}
-			nextReason={blockReason()}
-		/>
+	<footer class="sticky bottom-0 z-50 w-full">
+		<div class="mx-auto w-full max-w-7xl px-4 py-3 md:px-6 md:py-4">
+			<div
+				class="rounded-lg bg-black/[0.08] backdrop-blur-md backdrop-saturate-150 dark:bg-white/[0.08]"
+			>
+				<StepNav
+					onBack={step > 1 ? back : undefined}
+					onNext={step < 4 ? next : undefined}
+					{busy}
+					{nextLabel}
+					nextDisabled={!!blockReason()}
+					nextReason={blockReason()}
+				/>
+			</div>
+		</div>
 	</footer>
 </div>

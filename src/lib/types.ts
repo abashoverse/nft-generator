@@ -11,14 +11,19 @@ export interface Layer {
 }
 
 export interface IncompatibleRule {
-	traitA: string;
-	traitB: string;
+	conditions: {
+		layerName: string;
+		traitNames: string[];
+	}[];
+	blockedLayer: string;
+	blockedTrait: string;
 }
 
 export interface CollectionConfig {
 	name: string;
 	description: string;
 	size: number;
+	exportSize: number;
 	usePreReveal: boolean;
 	preRevealImage: File | null;
 	preRevealAnimation: File | null;

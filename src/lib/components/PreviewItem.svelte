@@ -19,9 +19,9 @@
 </script>
 
 <div
-	class="border-border bg-lcd group flex flex-col gap-2 rounded border p-2 transition-colors hover:border-ink"
+	class="group flex flex-col gap-2 rounded-lg border-2 border-ink/30 bg-surface p-2 transition-colors duration-200 ease-out hover:border-ink"
 >
-	<canvas bind:this={canvas} width={120} height={120} class="aspect-square w-full rounded bg-lcd-light"></canvas>
+	<canvas bind:this={canvas} width={120} height={120} class="aspect-square w-full rounded-md bg-surface"></canvas>
 	<p
 		class="font-brains-medium text-[10px] uppercase tracking-wider text-muted group-hover:text-ink"
 	>

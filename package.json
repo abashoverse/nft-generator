@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abashoverse/nft-generator.git"
+  },
+  "homepage": "https://github.com/abashoverse/nft-generator#readme",
+  "bugs": {
+    "url": "https://github.com/abashoverse/nft-generator/issues"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
@@ -12,7 +20,8 @@
   },
   "dependencies": {
     "jszip": "^3.10.1",
-    "lucide-svelte": "^0.469.0"
+    "lucide-svelte": "^0.469.0",
+    "viem": "^2.51.0"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",
