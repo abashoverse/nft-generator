@@ -37,12 +37,3 @@ export interface Metadata {
 	}[];
 	soulbound?: boolean;
 }
-
-export interface DebugEvent {
-	id: number;
-	ts: number;
-	step: number;
-	level: 'info' | 'warn' | 'error' | 'success';
-	message: string;
-	data?: unknown;
-}

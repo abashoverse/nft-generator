@@ -3,11 +3,20 @@
 	import { onMount } from 'svelte';
 	import { themeStore } from '$lib/stores/theme.svelte';
 
+	const umamiUrl = import.meta.env.PUBLIC_UMAMI_SCRIPT_URL as string | undefined;
+	const umamiId = import.meta.env.PUBLIC_UMAMI_WEBSITE_ID as string | undefined;
+
 	let { children } = $props();
 
 	onMount(() => {
 		themeStore.init();
 	});
 </script>
+
+<svelte:head>
+	{#if umamiUrl && umamiId}
+		<script defer src={umamiUrl} data-website-id={umamiId}></script>
+	{/if}
+</svelte:head>
 
 {@render children()}

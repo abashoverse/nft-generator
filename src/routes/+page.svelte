@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { generator } from '$lib/stores/generator.svelte';
-	import { debugStore } from '$lib/stores/debug.svelte';
 	import StepIndicator from '$lib/components/StepIndicator.svelte';
 	import StepNav from '$lib/components/StepNav.svelte';
 	import Step1Setup from '$lib/components/Step1Setup.svelte';
@@ -43,23 +42,16 @@
 	const maxReached = $derived(step1Valid ? (step2Valid ? (step3Valid ? 4 : 3) : 2) : 1);
 
 	function next() {
-		const reason = blockReason();
-		if (reason) {
-			debugStore.log(step, `next blocked: ${reason}`, 'warn');
-			return;
-		}
-		debugStore.log(step, `advancing to step ${step + 1}`, 'info');
+		if (blockReason()) return;
 		step = Math.min(4, step + 1);
 	}
 
 	function back() {
-		debugStore.log(step, `going back to step ${step - 1}`, 'info');
 		step = Math.max(1, step - 1);
 	}
 
 	function jump(target: number) {
 		if (target > maxReached) return;
-		debugStore.log(step, `jumped to step ${target}`, 'info');
 		step = target;
 	}
 
@@ -116,7 +108,7 @@
 		</div>
 	</header>
 
-	<main class="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+	<main class="mx-auto flex w-full max-w-6xl flex-col justify-center px-4 py-8 sm:px-6">
 		<section class="border-border bg-lcd rounded-lg border-2">
 			<div class="p-5 sm:p-8">
 				{#if step === 1}

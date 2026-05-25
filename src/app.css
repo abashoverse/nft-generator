@@ -2,7 +2,7 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Theme tokens — LCD aesthetic (light mode) */
+/* Theme tokens: LCD aesthetic (light mode) */
 @theme {
 	--color-lcd: #d4ded1;
 	--color-lcd-light: #e2eae0;
@@ -19,7 +19,7 @@
 	--ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
 }
 
-/* Dark mode overrides — inverted LCD */
+/* Dark mode overrides: inverted LCD */
 :root.dark {
 	--color-lcd: #0a0a0a;
 	--color-lcd-light: #141414;
@@ -152,7 +152,7 @@ textarea {
 	min-height: 88px;
 }
 
-/* Hide native number-input spinners — we render our own +/- controls. */
+/* Hide native number-input spinners. We render our own +/- controls. */
 input[type='number']::-webkit-outer-spin-button,
 input[type='number']::-webkit-inner-spin-button {
 	-webkit-appearance: none;

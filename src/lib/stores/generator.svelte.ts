@@ -5,7 +5,6 @@ import type {
 	CollectionConfig,
 	Combination
 } from '$lib/types';
-import { debugStore } from './debug.svelte';
 
 function createGeneratorStore() {
 	let layers = $state<Layer[]>([]);
@@ -23,27 +22,18 @@ function createGeneratorStore() {
 
 	function updateConfig(updates: Partial<CollectionConfig>) {
 		config = { ...config, ...updates };
-		debugStore.log(1, `config updated: ${Object.keys(updates).join(', ')}`, 'info', updates);
 	}
 
 	function setLayers(next: Layer[]) {
 		layers = next;
-		debugStore.log(
-			2,
-			`layers set (${next.length} layers, ${next.reduce((a, l) => a + l.traits.length, 0)} traits)`,
-			'info'
-		);
 	}
 
 	function addIncompatibleRule(rule: IncompatibleRule) {
 		incompatibleRules = [...incompatibleRules, rule];
-		debugStore.log(2, `rule added: ${rule.traitA} ↔ ${rule.traitB}`, 'info');
 	}
 
 	function removeIncompatibleRule(index: number) {
-		const removed = incompatibleRules[index];
 		incompatibleRules = incompatibleRules.filter((_, i) => i !== index);
-		debugStore.log(2, `rule removed: ${removed?.traitA} ↔ ${removed?.traitB}`, 'info');
 	}
 
 	function setCollection(next: Combination[]) {
@@ -72,11 +62,6 @@ function createGeneratorStore() {
 			if (isValidCombo(selected, incompatibleRules)) return selected;
 			attempts++;
 		}
-		debugStore.log(
-			3,
-			`hit max attempts (${maxAttempts}) finding a valid combo; falling back to first traits`,
-			'warn'
-		);
 		return layers.map((layer) => layer.traits[0].file.name);
 	}
 

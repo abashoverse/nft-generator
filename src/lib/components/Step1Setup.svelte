@@ -1,9 +1,7 @@
 <script lang="ts">
 	import { generator } from '$lib/stores/generator.svelte';
-	import { debugStore } from '$lib/stores/debug.svelte';
 	import type { Layer } from '$lib/types';
 	import { Upload, Image as ImageIcon, Film, Loader2, AlertTriangle } from 'lucide-svelte';
-	import DebugPanel from './DebugPanel.svelte';
 	import Input from './ui/Input.svelte';
 	import Textarea from './ui/Textarea.svelte';
 	import Card from './ui/Card.svelte';
@@ -29,40 +27,21 @@
 	);
 	const dimensionsConsistent = $derived(dimensionsLoaded && uniqueDimensions.length <= 1);
 
-	const nameOk = $derived(config.name.trim() !== '');
-	const layersOk = $derived(layers.length > 0);
-	const sizeOk = $derived(config.size > 0 && config.size <= 10000);
-	const preRevealOk = $derived(!config.usePreReveal || config.preRevealImage !== null);
-	const dimensionsOk = $derived(layers.length === 0 || dimensionsConsistent);
-
 	function handleFolderChange(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
 		const files = Array.from(input.files ?? []);
-		if (files.length === 0) {
-			debugStore.log(1, 'folder selection cancelled or empty', 'warn');
-			return;
-		}
-
-		debugStore.log(1, `received ${files.length} files from folder picker`, 'info');
+		if (files.length === 0) return;
 
 		const temp: Record<string, File[]> = {};
-		let skipped = 0;
 
 		for (const file of files) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const rel = (file as any).webkitRelativePath as string;
 			const parts = rel.split('/');
-			if (parts.length < 3) {
-				skipped++;
-				continue;
-			}
+			if (parts.length < 3) continue;
 			const layerName = parts[1];
 			if (!temp[layerName]) temp[layerName] = [];
 			temp[layerName].push(file);
-		}
-
-		if (skipped > 0) {
-			debugStore.log(1, `skipped ${skipped} files (not inside a layer subfolder)`, 'warn');
 		}
 
 		const newLayers: Layer[] = Object.entries(temp).map(([name, layerFiles]) => {
@@ -74,18 +53,39 @@
 		});
 
 		generator.setLayers(newLayers);
-		debugStore.log(
-			1,
-			`parsed ${newLayers.length} layers with ${newLayers.reduce((a, l) => a + l.traits.length, 0)} traits`,
-			'success'
-		);
 		loadDimensions(newLayers);
+	}
+
+	function readImageSize(file: File): Promise<{ width: number; height: number } | null> {
+		return new Promise((resolve) => {
+			const url = URL.createObjectURL(file);
+			const img = new Image();
+			const timer = setTimeout(() => {
+				img.src = '';
+				URL.revokeObjectURL(url);
+				console.warn(`[Step1Setup] timed out reading dimensions for ${file.name}`);
+				resolve(null);
+			}, 5000);
+			img.onload = () => {
+				clearTimeout(timer);
+				const w = img.naturalWidth;
+				const h = img.naturalHeight;
+				URL.revokeObjectURL(url);
+				resolve(w > 0 && h > 0 ? { width: w, height: h } : null);
+			};
+			img.onerror = () => {
+				clearTimeout(timer);
+				URL.revokeObjectURL(url);
+				console.warn(`[Step1Setup] could not read dimensions for ${file.name}`);
+				resolve(null);
+			};
+			img.src = url;
+		});
 	}
 
 	async function loadDimensions(input: Layer[]) {
 		if (input.length === 0) return;
 		isCheckingDimensions = true;
-		debugStore.log(1, 'checking image dimensions…', 'info');
 
 		try {
 			const updated: Layer[] = await Promise.all(
@@ -96,42 +96,15 @@
 							if (trait.width !== undefined && trait.height !== undefined) {
 								return trait;
 							}
-							try {
-								const bmp = await createImageBitmap(trait.file);
-								const w = bmp.width;
-								const h = bmp.height;
-								bmp.close?.();
-								return { ...trait, width: w, height: h };
-							} catch {
-								debugStore.log(
-									1,
-									`could not read dimensions for ${trait.file.name}`,
-									'warn'
-								);
-								return trait;
-							}
+							const size = await readImageSize(trait.file);
+							return size
+								? { ...trait, width: size.width, height: size.height }
+								: { ...trait, width: 0, height: 0 };
 						})
 					)
 				}))
 			);
 			generator.setLayers(updated);
-			const sizes = [
-				...new Set(
-					updated
-						.flatMap((l) => l.traits)
-						.filter((t) => t.width && t.height)
-						.map((t) => `${t.width}x${t.height}`)
-				)
-			];
-			if (sizes.length <= 1) {
-				debugStore.log(1, `all images share dimensions: ${sizes[0] ?? '∅'}`, 'success');
-			} else {
-				debugStore.log(
-					1,
-					`found ${sizes.length} different image sizes: ${sizes.join(', ')}`,
-					'error'
-				);
-			}
 		} finally {
 			isCheckingDimensions = false;
 		}
@@ -169,7 +142,7 @@
 			<Input
 				id="collectionName"
 				type="text"
-				placeholder="e.g., Cyber Punks 2077"
+				placeholder="e.g., abashoBots"
 				value={config.name}
 				oninput={(e) => generator.updateConfig({ name: e.currentTarget.value })}
 			/>
@@ -364,47 +337,4 @@
 			</div>
 		</label>
 	</Card>
-
-	<DebugPanel
-		step={1}
-		title="Setup"
-		checks={[
-			{ label: 'Collection name provided', ok: nameOk, hint: 'fill in a non-empty name' },
-			{
-				label: 'Collection size in 1–10000',
-				ok: sizeOk,
-				hint: `current: ${config.size}`
-			},
-			{
-				label: 'Layers folder loaded',
-				ok: layersOk,
-				hint: 'pick a folder containing layer subfolders'
-			},
-			{
-				label: 'All trait images share dimensions',
-				ok: dimensionsOk,
-				hint: isCheckingDimensions
-					? 'still checking…'
-					: `found ${uniqueDimensions.length} different sizes`
-			},
-			{
-				label: 'Pre-reveal image (if enabled)',
-				ok: preRevealOk,
-				hint: 'pre-reveal is on but no image selected'
-			}
-		]}
-		snapshot={[
-			{ label: 'name', value: config.name || '∅' },
-			{ label: 'size', value: config.size },
-			{ label: 'soulbound', value: String(config.soulbound) },
-			{ label: 'usePreReveal', value: String(config.usePreReveal) },
-			{ label: 'preRevealImage', value: config.preRevealImage?.name ?? '∅' },
-			{ label: 'preRevealAnimation', value: config.preRevealAnimation?.name ?? '∅' },
-			{ label: 'layers', value: layers.length },
-			{ label: 'total traits', value: totalAssets },
-			{ label: 'first layer', value: layers[0]?.name ?? '∅' },
-			{ label: 'unique image sizes', value: uniqueDimensions.join(', ') || '∅' },
-			{ label: 'dimensions ready', value: String(dimensionsLoaded) }
-		]}
-	/>
 </div>

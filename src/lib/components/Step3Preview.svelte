@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { generator } from '$lib/stores/generator.svelte';
-	import { debugStore } from '$lib/stores/debug.svelte';
 	import { Layers, RefreshCw } from 'lucide-svelte';
-	import DebugPanel from './DebugPanel.svelte';
 	import PreviewItem from './PreviewItem.svelte';
 	import Button from './ui/Button.svelte';
 	import Pill from './ui/Pill.svelte';
@@ -18,20 +16,13 @@
 	const size = $derived(generator.config.size);
 	const layers = $derived(generator.layers);
 
-	const uniqueCount = $derived(new Set(collection.map((c) => c.join('|'))).size);
-	const duplicateCount = $derived(collection.length - uniqueCount);
-
 	function buildCollection() {
 		busy = true;
-		const start = performance.now();
-		debugStore.log(3, `building collection of size ${size}…`, 'info');
 		const next: Combination[] = [];
 		for (let i = 0; i < size; i++) {
 			next.push(generator.generateRandomCombo());
 		}
 		generator.setCollection(next);
-		const ms = Math.round(performance.now() - start);
-		debugStore.log(3, `generated ${next.length} combos in ${ms}ms`, 'success');
 		busy = false;
 	}
 
@@ -73,20 +64,4 @@
 			{/each}
 		</div>
 	{/if}
-
-	<DebugPanel
-		step={3}
-		title="Preview"
-		checks={[
-			{ label: 'Collection generated', ok: collection.length > 0 },
-			{ label: 'Collection length matches config size', ok: collection.length === size }
-		]}
-		snapshot={[
-			{ label: 'requested size', value: size },
-			{ label: 'rendered', value: collection.length },
-			{ label: 'unique combos', value: uniqueCount },
-			{ label: 'duplicates', value: duplicateCount },
-			{ label: 'first combo', value: collection[0]?.join(' / ') ?? '∅' }
-		]}
-	/>
 </div>

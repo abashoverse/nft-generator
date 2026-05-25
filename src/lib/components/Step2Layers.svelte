@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { generator } from '$lib/stores/generator.svelte';
-	import { debugStore } from '$lib/stores/debug.svelte';
 	import { GripVertical, AlertTriangle, Plus, X, Dice5, Minus } from 'lucide-svelte';
-	import DebugPanel from './DebugPanel.svelte';
 	import Button from './ui/Button.svelte';
 	import Card from './ui/Card.svelte';
 	import Select from './ui/Select.svelte';
@@ -17,10 +15,6 @@
 	const layers = $derived(generator.layers);
 	const rules = $derived(generator.incompatibleRules);
 	const allTraits = $derived(layers.flatMap((l) => l.traits.map((t) => t.file.name)));
-	const totalAssets = $derived(layers.reduce((a, l) => a + l.traits.length, 0));
-	const totalCombinations = $derived(
-		layers.length > 0 ? layers.reduce((a, l) => a * Math.max(l.traits.length, 1), 1) : 0
-	);
 
 	$effect(() => {
 		void layers;
@@ -45,11 +39,6 @@
 		const [moved] = next.splice(from, 1);
 		next.splice(index, 0, moved);
 		generator.setLayers(next);
-		debugStore.log(
-			2,
-			`reordered "${moved.name}" from position ${from + 1} → ${index + 1}`,
-			'info'
-		);
 		draggedIndex = null;
 	}
 
@@ -84,7 +73,6 @@
 				: l
 		);
 		generator.setLayers(next);
-		debugStore.log(2, `normalized "${layer.name}" weights to sum to 100%`, 'info');
 	}
 
 	function formatPct(n: number) {
@@ -96,8 +84,6 @@
 			generator.addIncompatibleRule({ traitA, traitB });
 			traitA = '';
 			traitB = '';
-		} else {
-			debugStore.log(2, 'rule rejected: pick two different traits', 'warn');
 		}
 	}
 
@@ -105,7 +91,6 @@
 		await tick();
 		if (previewCanvas) {
 			await generator.generatePreview(previewCanvas);
-			debugStore.log(2, 'preview regenerated', 'info');
 		}
 	}
 </script>
@@ -125,7 +110,7 @@
 		<section class="space-y-3">
 			<p class="font-body text-xs text-muted">
 				Drag layers to reorder. Top of the list renders on top. Weights are percentages
-				per layer (should sum to 100%) — anything down to 0.001%.
+				per layer (should sum to 100%), anything down to 0.001%.
 			</p>
 
 			{#if layers.length === 0}
@@ -323,29 +308,4 @@
 			</Card>
 		</aside>
 	</div>
-
-	<DebugPanel
-		step={2}
-		title="Layers"
-		checks={[
-			{ label: 'At least one layer present', ok: layers.length > 0, hint: 'load layers in step 1' },
-			{
-				label: 'Every layer has ≥ 1 trait',
-				ok: layers.every((l) => l.traits.length > 0),
-				hint: 'one or more layers are empty'
-			},
-			{
-				label: 'Total combinations ≥ collection size',
-				ok: totalCombinations >= generator.config.size,
-				hint: `only ${totalCombinations.toLocaleString()} possible vs. ${generator.config.size} requested`
-			}
-		]}
-		snapshot={[
-			{ label: 'layers', value: layers.length },
-			{ label: 'total traits', value: totalAssets },
-			{ label: 'rules', value: rules.length },
-			{ label: 'possible combos', value: totalCombinations.toLocaleString() },
-			{ label: 'stack order (top→bottom)', value: layers.map((l) => l.name).join(' · ') || '∅' }
-		]}
-	/>
 </div>

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import JSZip from 'jszip';
 	import { generator } from '$lib/stores/generator.svelte';
-	import { debugStore } from '$lib/stores/debug.svelte';
 	import { pinFileToIPFS, createIPFSFormData } from '$lib/utils/ipfs';
 	import type { Metadata } from '$lib/types';
 	import {
@@ -12,7 +11,6 @@
 		Loader2,
 		CheckCircle2
 	} from 'lucide-svelte';
-	import DebugPanel from './DebugPanel.svelte';
 	import Card from './ui/Card.svelte';
 	import Input from './ui/Input.svelte';
 	import Button from './ui/Button.svelte';
@@ -33,11 +31,6 @@
 	const collection = $derived(generator.collection);
 	const layers = $derived(generator.layers);
 
-	function setStatus(s: string, level: 'info' | 'success' | 'error' = 'info') {
-		status = s;
-		debugStore.log(4, s, level);
-	}
-
 	function syncBusy() {
 		busy = isExporting;
 	}
@@ -46,7 +39,7 @@
 		isExporting = true;
 		syncBusy();
 		progress = 0;
-		setStatus('Initializing ZIP generation...');
+		status = 'Initializing ZIP generation...';
 
 		try {
 			const zip = new JSZip();
@@ -58,7 +51,7 @@
 			canvas.height = 1000;
 
 			for (let i = 0; i < collection.length; i++) {
-				setStatus(`Rendering image ${i + 1}/${collection.length}`);
+				status = `Rendering image ${i + 1}/${collection.length}`;
 				await generator.drawCombo(collection[i], canvas, 1000);
 				const blob = await new Promise<Blob>((res) =>
 					canvas.toBlob((b) => res(b!), 'image/png')
@@ -68,7 +61,7 @@
 			}
 
 			for (let i = 0; i < collection.length; i++) {
-				setStatus(`Generating metadata ${i + 1}/${collection.length}`);
+				status = `Generating metadata ${i + 1}/${collection.length}`;
 				const attributes = collection[i].map((trait, idx) => ({
 					trait_type: layers[idx].name,
 					value: trait.replace(/\.[^/.]+$/, '')
@@ -90,7 +83,7 @@
 				progress = 45 + ((i + 1) / collection.length) * 45;
 			}
 
-			setStatus('Compressing ZIP file...');
+			status = 'Compressing ZIP file...';
 			const content = await zip.generateAsync({ type: 'blob' });
 
 			const url = URL.createObjectURL(content);
@@ -101,10 +94,10 @@
 			URL.revokeObjectURL(url);
 
 			progress = 100;
-			setStatus('ZIP generated and download started!', 'success');
+			status = 'ZIP generated and download started!';
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
-			setStatus(`Error: ${msg}`, 'error');
+			status = `Error: ${msg}`;
 		} finally {
 			isExporting = false;
 			syncBusy();
@@ -120,7 +113,7 @@
 		isExporting = true;
 		syncBusy();
 		progress = 0;
-		setStatus('Preparing files for IPFS upload...');
+		status = 'Preparing files for IPFS upload...';
 
 		try {
 			const canvas = document.createElement('canvas');
@@ -130,7 +123,7 @@
 			const imageFiles: File[] = [];
 
 			for (let i = 0; i < collection.length; i++) {
-				setStatus(`Preparing image ${i + 1}/${collection.length}`);
+				status = `Preparing image ${i + 1}/${collection.length}`;
 				await generator.drawCombo(collection[i], canvas, 1000);
 				const blob = await new Promise<Blob>((res) =>
 					canvas.toBlob((b) => res(b!), 'image/png')
@@ -139,7 +132,7 @@
 				progress = ((i + 1) / collection.length) * 30;
 			}
 
-			setStatus('Uploading images to IPFS...');
+			status = 'Uploading images to IPFS...';
 			const imgFormData = createIPFSFormData(imageFiles, 'images', `${config.name} - Images`);
 			const imgResult = await pinFileToIPFS(imgFormData, pinataJwt);
 			const imagesCID = imgResult.IpfsHash;
@@ -168,7 +161,7 @@
 				metaFiles.push(new File([blob], `${i}.json`, { type: 'application/json' }));
 			}
 
-			setStatus('Uploading metadata to IPFS...');
+			status = 'Uploading metadata to IPFS...';
 			const metaFormData = createIPFSFormData(
 				metaFiles,
 				'metadata',
@@ -179,10 +172,10 @@
 
 			ipfsResult = { imagesCID, metadataCID };
 			progress = 100;
-			setStatus('Collection uploaded to IPFS successfully!', 'success');
+			status = 'Collection uploaded to IPFS successfully!';
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
-			setStatus(`Error: ${msg}`, 'error');
+			status = `Error: ${msg}`;
 		} finally {
 			isExporting = false;
 			syncBusy();
@@ -333,26 +326,4 @@
 			{/if}
 		</section>
 	</div>
-
-	<DebugPanel
-		step={4}
-		title="Export"
-		checks={[
-			{ label: 'Collection ready', ok: collection.length > 0, hint: 'go back to step 3' },
-			{
-				label: 'Pinata JWT entered (only required for IPFS)',
-				ok: pinataJwt.length > 0,
-				hint: 'ZIP export works without it'
-			},
-			{ label: 'Not currently exporting', ok: !isExporting }
-		]}
-		snapshot={[
-			{ label: 'tokens to export', value: collection.length },
-			{ label: 'progress', value: `${Math.round(progress)}%` },
-			{ label: 'status', value: status || '∅' },
-			{ label: 'soulbound flag', value: String(config.soulbound) },
-			{ label: 'images CID', value: ipfsResult?.imagesCID ?? '∅' },
-			{ label: 'metadata CID', value: ipfsResult?.metadataCID ?? '∅' }
-		]}
-	/>
 </div>
