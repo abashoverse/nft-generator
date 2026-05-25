@@ -132,6 +132,15 @@
 						<CheckCircle2 class="h-3.5 w-3.5" /> Holder confirmed, unlocked
 					</p>
 				{:else}
+					<p class="font-body text-xs text-muted">
+						Checks your connected wallet plus any vault that delegated to it via
+						<a
+							href="https://delegate.xyz"
+							target="_blank"
+							rel="noreferrer"
+							class="text-ink underline underline-offset-2 hover:text-ink">delegate.xyz</a
+						>.
+					</p>
 					<Button
 						variant="secondary"
 						size="md"

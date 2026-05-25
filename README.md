@@ -158,7 +158,7 @@ If **none** of the paywall vars are set, the paywall is OFF and the app is fully
 
 The free tier is hard-capped at **500×500** exports. Custom resolution unlocks via one of three paths:
 
-1. **Hold an abasho or abashos NFT** on Ethereum mainnet. Connect wallet, sign in with Ethereum, click "Check holder status".
+1. **Hold an abasho or abashos NFT** on Ethereum mainnet. Connect wallet, sign in with Ethereum, click "Check holder status". The check also picks up [delegate.xyz](https://delegate.xyz) delegations, so a hot wallet can verify against NFTs sitting in a delegating vault without moving them.
 2. **Pay once** in ETH on mainnet or Base. Default $10, converted to ETH live via CoinGecko.
 3. **Self-host** the app yourself by cloning the repo. The whole codebase is open source, no paywall when running locally.
 

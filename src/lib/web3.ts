@@ -23,6 +23,47 @@ const erc721Abi = [
 	}
 ] as const;
 
+// delegate.xyz Delegate Registry V2, deployed at the same address on every supported chain.
+const DELEGATE_REGISTRY_V2: Address = '0x00000000000000447e69651d841bD8D104Bed493';
+
+const delegateRegistryAbi = [
+	{
+		name: 'getIncomingDelegations',
+		type: 'function',
+		stateMutability: 'view',
+		inputs: [{ name: 'to', type: 'address' }],
+		outputs: [
+			{
+				type: 'tuple[]',
+				components: [
+					{ name: 'type_', type: 'uint8' },
+					{ name: 'to', type: 'address' },
+					{ name: 'from', type: 'address' },
+					{ name: 'rights', type: 'bytes32' },
+					{ name: 'contract_', type: 'address' },
+					{ name: 'tokenId', type: 'uint256' },
+					{ name: 'amount', type: 'uint256' }
+				]
+			}
+		]
+	}
+] as const;
+
+// Empty rights (bytes32(0)) means the delegator granted general / all rights.
+const EMPTY_RIGHTS = '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+// Delegation type enum from the V2 registry:
+// 0 NONE, 1 ALL, 2 CONTRACT, 3 ERC721, 4 ERC20, 5 ERC1155
+interface RawDelegation {
+	type_: number;
+	to: Address;
+	from: Address;
+	rights: `0x${string}`;
+	contract_: Address;
+	tokenId: bigint;
+	amount: bigint;
+}
+
 function chainFor(key: SupportedChain): Chain {
 	return key === 'mainnet' ? mainnet : base;
 }
@@ -91,6 +132,41 @@ export async function readNftBalance(
 		args: [walletAddress]
 	});
 	return balance as bigint;
+}
+
+// Returns the unique set of vault wallets that have delegated to `walletAddress`
+// with general rights (bytes32(0)) for any of the provided NFT contracts, or
+// for everything (ALL type). Used to let cold-wallet holders verify via
+// delegate.xyz without moving NFTs.
+export async function getDelegatedVaults(
+	walletAddress: Address,
+	relevantContracts: Address[]
+): Promise<Address[]> {
+	const lowerFilter = new Set(relevantContracts.map((c) => c.toLowerCase()));
+	try {
+		const delegations = (await mainnetPublic.readContract({
+			address: DELEGATE_REGISTRY_V2,
+			abi: delegateRegistryAbi,
+			functionName: 'getIncomingDelegations',
+			args: [walletAddress]
+		})) as RawDelegation[];
+
+		const vaults = new Set<Address>();
+		for (const d of delegations) {
+			if (d.rights !== EMPTY_RIGHTS) continue;
+			const isAllType = d.type_ === 1;
+			const isContractOrToken =
+				(d.type_ === 2 || d.type_ === 3) &&
+				lowerFilter.has(d.contract_.toLowerCase());
+			if (isAllType || isContractOrToken) {
+				vaults.add(d.from);
+			}
+		}
+		return [...vaults];
+	} catch (err) {
+		console.warn('[web3] delegate.xyz lookup failed', err);
+		return [];
+	}
 }
 
 async function ensureChain(chainKey: SupportedChain): Promise<void> {

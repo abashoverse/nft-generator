@@ -3,6 +3,7 @@ import {
 	connectWallet,
 	signSiwe,
 	readNftBalance,
+	getDelegatedVaults,
 	sendPayment,
 	getEthUsdPrice,
 	usdToEthString,
@@ -107,10 +108,21 @@ function createPaywall() {
 	async function checkHolder() {
 		if (!walletAddress || !siweVerified) throw new Error('Sign in first.');
 		if (!HAS_NFT_CONFIG) throw new Error('Holder check is not configured.');
-		const checks: Promise<bigint>[] = [];
-		if (ABASHO_NFT) checks.push(readNftBalance(ABASHO_NFT, walletAddress));
-		if (ABASHOS_NFT) checks.push(readNftBalance(ABASHOS_NFT, walletAddress));
-		const balances = await Promise.all(checks);
+
+		const nftContracts: Address[] = [];
+		if (ABASHO_NFT) nftContracts.push(ABASHO_NFT);
+		if (ABASHOS_NFT) nftContracts.push(ABASHOS_NFT);
+
+		// Direct holder check on the connected wallet.
+		const directChecks = nftContracts.map((c) => readNftBalance(c, walletAddress!));
+
+		// delegate.xyz: pull vault wallets that delegated to the connected wallet.
+		const vaults = await getDelegatedVaults(walletAddress, nftContracts);
+		const delegatedChecks = vaults.flatMap((v) =>
+			nftContracts.map((c) => readNftBalance(c, v))
+		);
+
+		const balances = await Promise.all([...directChecks, ...delegatedChecks]);
 		isHolder = balances.some((b) => b > 0n);
 		persist();
 		return isHolder;
