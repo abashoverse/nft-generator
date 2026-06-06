@@ -1,6 +1,7 @@
 <script lang="ts">
 	import JSZip from 'jszip';
 	import { generator } from '$lib/stores/generator.svelte';
+	import { renderCollectionToBlobs } from '$lib/render/exportRenderer';
 	import { paywall, FREE_TIER_EXPORT_PX } from '$lib/paywall.svelte';
 	import type { Metadata } from '$lib/types';
 	import { Download, Loader2, CheckCircle2, Lock } from 'lucide-svelte';
@@ -20,6 +21,9 @@
 	let status = $state('');
 	let isExporting = $state(false);
 	let showPaywall = $state(false);
+	let readyBlob = $state<Blob | null>(null);
+	let readyName = $state('');
+	let readySize = $state(0);
 
 	const config = $derived(generator.config);
 	const collection = $derived(generator.collection);
@@ -51,10 +55,30 @@
 		busy = isExporting;
 	}
 
+	function triggerDownload(blob: Blob, filename: string) {
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = filename;
+		// Some browsers (older Firefox) only honour a click on an in-DOM anchor.
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		// Revoking synchronously can cancel the download before it starts.
+		setTimeout(() => URL.revokeObjectURL(url), 10000);
+	}
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	}
+
 	async function generateZip() {
 		isExporting = true;
 		syncBusy();
 		progress = 0;
+		readyBlob = null;
 		status = 'Initializing ZIP generation...';
 
 		try {
@@ -62,18 +86,18 @@
 			const imagesFolder = zip.folder('images');
 			const metadataFolder = zip.folder('metadata');
 
-			const canvas = document.createElement('canvas');
-			canvas.width = exportSize;
-			canvas.height = exportSize;
-
-			for (let i = 0; i < collection.length; i++) {
-				status = `Rendering image ${i + 1}/${collection.length}`;
-				await generator.drawCombo(collection[i], canvas, exportSize);
-				const blob = await new Promise<Blob>((res) =>
-					canvas.toBlob((b) => res(b!), 'image/png')
-				);
-				imagesFolder?.file(`${i}.png`, blob);
-				progress = ((i + 1) / collection.length) * 45;
+			const total = collection.length;
+			const blobs = await renderCollectionToBlobs(
+				layers,
+				collection,
+				exportSize,
+				(rendered) => {
+					status = `Rendering image ${rendered}/${total}`;
+					progress = (rendered / total) * 45;
+				}
+			);
+			for (let i = 0; i < blobs.length; i++) {
+				imagesFolder?.file(`${i}.png`, blobs[i]);
 			}
 
 			for (let i = 0; i < collection.length; i++) {
@@ -102,15 +126,18 @@
 			status = 'Compressing ZIP file...';
 			const content = await zip.generateAsync({ type: 'blob' });
 
-			const url = URL.createObjectURL(content);
-			const link = document.createElement('a');
-			link.href = url;
-			link.download = `${config.name.replace(/\s+/g, '-').toLowerCase()}-collection.zip`;
-			link.click();
-			URL.revokeObjectURL(url);
+			const filename = `${config.name.replace(/\s+/g, '-').toLowerCase()}-collection.zip`;
+			readyBlob = content;
+			readyName = filename;
+			readySize = content.size;
+
+			// Best-effort automatic download. Browsers that block it (lost user
+			// activation after a long async job, iOS Safari, etc.) still have the
+			// Download button below, which fires inside a fresh user gesture.
+			triggerDownload(content, filename);
 
 			progress = 100;
-			status = 'ZIP generated and download started.';
+			status = 'ZIP ready. If the download did not start, use the button below.';
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			status = `Error: ${msg}`;
@@ -211,6 +238,18 @@
 				{/if}
 				Generate &amp; download ZIP
 			</Button>
+
+			{#if readyBlob}
+				<Button
+					variant="secondary"
+					size="lg"
+					onclick={() => readyBlob && triggerDownload(readyBlob, readyName)}
+					class="w-full"
+				>
+					<Download class="h-4 w-4" />
+					Download ZIP ({formatBytes(readySize)})
+				</Button>
+			{/if}
 		</section>
 
 		<section class="space-y-4">

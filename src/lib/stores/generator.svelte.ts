@@ -21,11 +21,21 @@ function createGeneratorStore() {
 		soulbound: false
 	});
 
+	// Decoded traits are reused across every image instead of re-decoding the
+	// same file once per NFT. Cleared whenever the layer set changes.
+	const bitmapCache = new Map<File, ImageBitmap>();
+
+	function clearBitmapCache() {
+		for (const bmp of bitmapCache.values()) bmp.close();
+		bitmapCache.clear();
+	}
+
 	function updateConfig(updates: Partial<CollectionConfig>) {
 		config = { ...config, ...updates };
 	}
 
 	function setLayers(next: Layer[]) {
+		clearBitmapCache();
 		layers = next;
 	}
 
@@ -85,7 +95,11 @@ function createGeneratorStore() {
 			const traitName = combo[i];
 			const trait = layer.traits.find((t) => t.file.name === traitName);
 			if (trait) {
-				const img = await createImageBitmap(trait.file);
+				let img = bitmapCache.get(trait.file);
+				if (!img) {
+					img = await createImageBitmap(trait.file);
+					bitmapCache.set(trait.file, img);
+				}
 				ctx.drawImage(img, 0, 0, size, size);
 			}
 		}
