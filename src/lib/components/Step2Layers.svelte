@@ -14,7 +14,6 @@
 		ArrowDown
 	} from 'lucide-svelte';
 	import Button from './ui/Button.svelte';
-	import Select from './ui/Select.svelte';
 	import Pill from './ui/Pill.svelte';
 	import { tick } from 'svelte';
 
@@ -23,44 +22,30 @@
 	let showIncompatibility = $state(false);
 
 	let draftConditions = $state<{ layerId: string; traitIds: string[] }[]>([]);
-	let draftBlockLayerId = $state('');
-	let draftBlockTraitId = $state('');
+	let draftBlocks = $state<{ layerId: string; traitIds: string[] }[]>([]);
 	let builderStep = $state<1 | 2>(1);
 
 	const layers = $derived(generator.layers);
 	const rules = $derived(generator.incompatibleRules);
 
 	const usedConditionLayers = $derived(new Set(draftConditions.map((c) => c.layerId)));
-	const availableForBlock = $derived(layers.filter((l) => !usedConditionLayers.has(l.id)));
+	const usedBlockLayers = $derived(new Set(draftBlocks.map((b) => b.layerId)));
+	const usedLayers = $derived(new Set([...usedConditionLayers, ...usedBlockLayers]));
+	const hasUnusedLayer = $derived(layers.some((l) => !usedLayers.has(l.id)));
 
 	const ifValid = $derived(
 		draftConditions.length >= 1 && draftConditions.every((c) => c.traitIds.length > 0)
 	);
-
-	const draftValid = $derived(
-		ifValid &&
-			draftBlockLayerId !== '' &&
-			draftBlockTraitId !== '' &&
-			!usedConditionLayers.has(draftBlockLayerId)
+	const thenValid = $derived(
+		draftBlocks.length >= 1 && draftBlocks.every((b) => b.traitIds.length > 0)
 	);
+	const draftValid = $derived(ifValid && thenValid);
 
 	$effect(() => {
 		void layers;
 		void previewCanvas;
 		if (previewCanvas) {
 			generator.generatePreview(previewCanvas);
-		}
-	});
-
-	$effect(() => {
-		if (draftBlockLayerId && usedConditionLayers.has(draftBlockLayerId)) {
-			draftBlockLayerId = '';
-		}
-		if (
-			draftBlockTraitId &&
-			!traitsOfLayer(draftBlockLayerId).some((t) => t.id === draftBlockTraitId)
-		) {
-			draftBlockTraitId = '';
 		}
 	});
 
@@ -152,52 +137,82 @@
 		return traitsOfLayer(layerId).find((t) => t.id === traitId)?.name ?? '(removed)';
 	}
 
-	function addConditionLayer() {
-		const next = layers.find((l) => !usedConditionLayers.has(l.id));
-		if (!next) return;
-		draftConditions = [...draftConditions, { layerId: next.id, traitIds: [] }];
+	type RuleEntry = { layerId: string; traitIds: string[] };
+
+	function addLayerTo(list: RuleEntry[]): RuleEntry[] {
+		const next = layers.find((l) => !usedLayers.has(l.id));
+		if (!next) return list;
+		return [...list, { layerId: next.id, traitIds: [] }];
 	}
 
-	function removeCondition(idx: number) {
-		draftConditions = draftConditions.filter((_, i) => i !== idx);
+	function removeAt(list: RuleEntry[], idx: number): RuleEntry[] {
+		return list.filter((_, i) => i !== idx);
 	}
 
-	function setConditionLayer(idx: number, newLayerId: string) {
-		draftConditions = draftConditions.map((c, i) =>
-			i === idx ? { layerId: newLayerId, traitIds: [] } : c
-		);
+	function setLayerAt(list: RuleEntry[], idx: number, layerId: string): RuleEntry[] {
+		return list.map((e, i) => (i === idx ? { layerId, traitIds: [] } : e));
 	}
 
-	function toggleConditionTrait(idx: number, traitId: string) {
-		draftConditions = draftConditions.map((c, i) => {
-			if (i !== idx) return c;
-			const has = c.traitIds.includes(traitId);
+	function toggleTraitAt(list: RuleEntry[], idx: number, traitId: string): RuleEntry[] {
+		return list.map((e, i) => {
+			if (i !== idx) return e;
+			const has = e.traitIds.includes(traitId);
 			return {
-				...c,
-				traitIds: has ? c.traitIds.filter((t) => t !== traitId) : [...c.traitIds, traitId]
+				...e,
+				traitIds: has ? e.traitIds.filter((t) => t !== traitId) : [...e.traitIds, traitId]
 			};
 		});
+	}
+
+	function addCondition() {
+		draftConditions = addLayerTo(draftConditions);
+	}
+	function removeCondition(idx: number) {
+		draftConditions = removeAt(draftConditions, idx);
+	}
+	function setConditionLayer(idx: number, layerId: string) {
+		draftConditions = setLayerAt(draftConditions, idx, layerId);
+	}
+	function toggleConditionTrait(idx: number, traitId: string) {
+		draftConditions = toggleTraitAt(draftConditions, idx, traitId);
+	}
+
+	function addBlock() {
+		draftBlocks = addLayerTo(draftBlocks);
+	}
+	function removeBlock(idx: number) {
+		draftBlocks = removeAt(draftBlocks, idx);
+	}
+	function setBlockLayer(idx: number, layerId: string) {
+		draftBlocks = setLayerAt(draftBlocks, idx, layerId);
+	}
+	function toggleBlockTrait(idx: number, traitId: string) {
+		draftBlocks = toggleTraitAt(draftBlocks, idx, traitId);
+	}
+
+	function goToBlockStep() {
+		if (!ifValid) return;
+		if (draftBlocks.length === 0) draftBlocks = addLayerTo(draftBlocks);
+		builderStep = 2;
 	}
 
 	function saveRule() {
 		if (!draftValid) return;
 		generator.addIncompatibleRule({
 			conditions: draftConditions.map((c) => ({ layerId: c.layerId, traitIds: [...c.traitIds] })),
-			blockedLayerId: draftBlockLayerId,
-			blockedTraitId: draftBlockTraitId
+			blocks: draftBlocks.map((b) => ({ layerId: b.layerId, traitIds: [...b.traitIds] }))
 		});
 		draftConditions = [];
-		draftBlockLayerId = '';
-		draftBlockTraitId = '';
+		draftBlocks = [];
 		builderStep = 1;
 	}
 
-	function describeIf(conditions: { layerId: string; traitIds: string[] }[]): string {
-		return conditions
-			.map((c) => {
-				const traits = c.traitIds.map((tid) => traitLabel(c.layerId, tid)).join(' or ');
-				const wrap = c.traitIds.length > 1 ? `(${traits})` : traits;
-				return `${layerLabel(c.layerId)} = ${wrap}`;
+	function describeEntries(entries: { layerId: string; traitIds: string[] }[]): string {
+		return entries
+			.map((e) => {
+				const traits = e.traitIds.map((tid) => traitLabel(e.layerId, tid)).join(' or ');
+				const wrap = e.traitIds.length > 1 ? `(${traits})` : traits;
+				return `${layerLabel(e.layerId)} = ${wrap}`;
 			})
 			.join(' AND ');
 	}
@@ -209,7 +224,7 @@
 	}
 
 	function describeRule(rule: IncompatibleRule): string {
-		return `If ${describeIf(rule.conditions)} then block ${layerLabel(rule.blockedLayerId)} = ${traitLabel(rule.blockedLayerId, rule.blockedTraitId)}`;
+		return `If ${describeEntries(rule.conditions)} then block ${describeEntries(rule.blocks)}`;
 	}
 </script>
 
@@ -248,6 +263,55 @@
 		>
 			<Plus class="h-3 w-3" />
 		</button>
+	</div>
+{/snippet}
+
+{#snippet ruleCard(
+	entry: { layerId: string; traitIds: string[] },
+	idx: number,
+	onSetLayer: (idx: number, layerId: string) => void,
+	onToggleTrait: (idx: number, traitId: string) => void,
+	onRemove: (idx: number) => void
+)}
+	<div
+		class="border-ink/30 flex min-w-[180px] flex-col gap-2 rounded-md border-2 bg-charcoal/40 p-3"
+	>
+		<div class="flex items-center gap-2">
+			<select
+				value={entry.layerId}
+				onchange={(e) => onSetLayer(idx, e.currentTarget.value)}
+				class="font-body flex-1 rounded-md border-2 border-ink bg-surface px-2 py-1 text-xs text-ink focus:outline-none"
+			>
+				{#each layers as l (l.id)}
+					{#if l.id === entry.layerId || !usedLayers.has(l.id)}
+						<option value={l.id}>{l.name}</option>
+					{/if}
+				{/each}
+			</select>
+			<button
+				type="button"
+				onclick={() => onRemove(idx)}
+				aria-label="Remove layer"
+				class="text-muted transition-colors hover:text-ink"
+			>
+				<X class="h-3.5 w-3.5" />
+			</button>
+		</div>
+		<ul class="max-h-36 space-y-1 overflow-y-auto pr-1">
+			{#each traitsOfLayer(entry.layerId) as trait (trait.id)}
+				<li>
+					<label class="flex cursor-pointer items-center gap-2 font-body text-xs text-ink">
+						<input
+							type="checkbox"
+							checked={entry.traitIds.includes(trait.id)}
+							onchange={() => onToggleTrait(idx, trait.id)}
+							class="accent-ink"
+						/>
+						<span class="truncate" title={trait.name}>{trait.name}</span>
+					</label>
+				</li>
+			{/each}
+		</ul>
 	</div>
 {/snippet}
 
@@ -532,54 +596,19 @@
 							{/if}
 							<div class="flex flex-wrap items-stretch gap-3">
 								{#each draftConditions as cond, cIdx (cIdx)}
-									<div
-										class="border-ink/30 flex min-w-[180px] flex-col gap-2 rounded-md border-2 bg-charcoal/40 p-3"
-									>
-										<div class="flex items-center gap-2">
-											<select
-												value={cond.layerId}
-												onchange={(e) => setConditionLayer(cIdx, e.currentTarget.value)}
-												class="font-body flex-1 rounded-md border-2 border-ink bg-surface px-2 py-1 text-xs text-ink focus:outline-none"
-											>
-												{#each layers as l (l.id)}
-													{#if l.id === cond.layerId || !usedConditionLayers.has(l.id)}
-														<option value={l.id}>{l.name}</option>
-													{/if}
-												{/each}
-											</select>
-											<button
-												type="button"
-												onclick={() => removeCondition(cIdx)}
-												aria-label="Remove condition layer"
-												class="text-muted transition-colors hover:text-ink"
-											>
-												<X class="h-3.5 w-3.5" />
-											</button>
-										</div>
-										<ul class="max-h-36 space-y-1 overflow-y-auto pr-1">
-											{#each traitsOfLayer(cond.layerId) as trait (trait.id)}
-												<li>
-													<label
-														class="flex cursor-pointer items-center gap-2 font-body text-xs text-ink"
-													>
-														<input
-															type="checkbox"
-															checked={cond.traitIds.includes(trait.id)}
-															onchange={() => toggleConditionTrait(cIdx, trait.id)}
-															class="accent-ink"
-														/>
-														<span class="truncate" title={trait.name}>{trait.name}</span>
-													</label>
-												</li>
-											{/each}
-										</ul>
-									</div>
+									{@render ruleCard(
+										cond,
+										cIdx,
+										setConditionLayer,
+										toggleConditionTrait,
+										removeCondition
+									)}
 								{/each}
 
-								{#if layers.length - draftConditions.length > 0}
+								{#if hasUnusedLayer}
 									<button
 										type="button"
-										onclick={addConditionLayer}
+										onclick={addCondition}
 										class="border-ink/30 hover:border-ink hover:bg-ink/[0.06] hover:text-ink font-brains-medium flex min-w-[120px] flex-col items-center justify-center gap-1 rounded-md border-2 bg-transparent px-4 py-3 text-[11px] uppercase tracking-wider text-muted transition-colors"
 									>
 										<Plus class="h-4 w-4" />
@@ -590,12 +619,7 @@
 						</div>
 
 						<div class="flex justify-end">
-							<Button
-								variant="primary"
-								size="sm"
-								onclick={() => (builderStep = 2)}
-								disabled={!ifValid}
-							>
+							<Button variant="primary" size="sm" onclick={goToBlockStep} disabled={!ifValid}>
 								Continue
 								<ChevronRight class="h-4 w-4" />
 							</Button>
@@ -604,7 +628,7 @@
 						<div class="bg-ink/[0.05] space-y-1 rounded-md px-3 py-2">
 							<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">If</p>
 							<p class="font-body text-xs leading-snug text-ink">
-								{describeIf(draftConditions)}
+								{describeEntries(draftConditions)}
 							</p>
 						</div>
 
@@ -612,41 +636,26 @@
 							<p class="font-brains-medium text-[11px] uppercase tracking-widest text-ink">
 								Then block
 							</p>
-							<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-								<div class="space-y-1">
-									<label
-										for="block-layer"
-										class="font-brains-medium text-[10px] uppercase tracking-widest text-muted"
+							{#if draftBlocks.length === 0}
+								<p class="font-body text-xs text-muted">
+									Add a layer whose traits should be blocked when the conditions match.
+								</p>
+							{/if}
+							<div class="flex flex-wrap items-stretch gap-3">
+								{#each draftBlocks as block, bIdx (bIdx)}
+									{@render ruleCard(block, bIdx, setBlockLayer, toggleBlockTrait, removeBlock)}
+								{/each}
+
+								{#if hasUnusedLayer}
+									<button
+										type="button"
+										onclick={addBlock}
+										class="border-ink/30 hover:border-ink hover:bg-ink/[0.06] hover:text-ink font-brains-medium flex min-w-[120px] flex-col items-center justify-center gap-1 rounded-md border-2 bg-transparent px-4 py-3 text-[11px] uppercase tracking-wider text-muted transition-colors"
 									>
-										Layer
-									</label>
-									<Select id="block-layer" bind:value={draftBlockLayerId}>
-										<option value="">Pick a layer</option>
-										{#each availableForBlock as l (l.id)}
-											<option value={l.id}>{l.name}</option>
-										{/each}
-									</Select>
-								</div>
-								<div class="space-y-1">
-									<label
-										for="block-trait"
-										class="font-brains-medium text-[10px] uppercase tracking-widest text-muted"
-									>
-										Trait
-									</label>
-									<Select
-										id="block-trait"
-										bind:value={draftBlockTraitId}
-										disabled={!draftBlockLayerId}
-									>
-										<option value="">
-											{draftBlockLayerId ? 'Pick a trait' : 'Pick a layer first'}
-										</option>
-										{#each traitsOfLayer(draftBlockLayerId) as t (t.id)}
-											<option value={t.id}>{t.name}</option>
-										{/each}
-									</Select>
-								</div>
+										<Plus class="h-4 w-4" />
+										Add layer
+									</button>
+								{/if}
 							</div>
 						</div>
 

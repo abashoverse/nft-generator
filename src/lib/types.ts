@@ -19,8 +19,10 @@ export interface IncompatibleRule {
 		layerId: string;
 		traitIds: string[];
 	}[];
-	blockedLayerId: string;
-	blockedTraitId: string;
+	blocks: {
+		layerId: string;
+		traitIds: string[];
+	}[];
 }
 
 export interface CollectionConfig {

@@ -74,15 +74,13 @@ function createGeneratorStore() {
 
 	function pruneRules() {
 		const byId = new Map(layers.map((l) => [l.id, l]));
-		incompatibleRules = incompatibleRules.filter((rule) => {
-			const condsOk = rule.conditions.every((c) => {
-				const layer = byId.get(c.layerId);
-				return !!layer && c.traitIds.every((tid) => layer.traits.some((t) => t.id === tid));
-			});
-			const blockLayer = byId.get(rule.blockedLayerId);
-			const blockOk = !!blockLayer && blockLayer.traits.some((t) => t.id === rule.blockedTraitId);
-			return condsOk && blockOk;
-		});
+		const entryOk = (e: { layerId: string; traitIds: string[] }) => {
+			const layer = byId.get(e.layerId);
+			return !!layer && e.traitIds.every((tid) => layer.traits.some((t) => t.id === tid));
+		};
+		incompatibleRules = incompatibleRules.filter(
+			(rule) => rule.conditions.every(entryOk) && rule.blocks.every(entryOk)
+		);
 	}
 
 	function setLayerAllowNone(layerId: string, allow: boolean) {
@@ -127,9 +125,11 @@ function createGeneratorStore() {
 				return cond.traitIds.includes(combo[layerIdx]);
 			});
 			if (!allConditionsMatch) return false;
-			const blockedIdx = layers.findIndex((l) => l.id === rule.blockedLayerId);
-			if (blockedIdx === -1) return false;
-			return combo[blockedIdx] === rule.blockedTraitId;
+			return rule.blocks.some((block) => {
+				const blockedIdx = layers.findIndex((l) => l.id === block.layerId);
+				if (blockedIdx === -1) return false;
+				return block.traitIds.includes(combo[blockedIdx]);
+			});
 		});
 	}
 
