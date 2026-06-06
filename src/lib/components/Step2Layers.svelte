@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { generator } from '$lib/stores/generator.svelte';
-	import type { IncompatibleRule } from '$lib/types';
+	import type { IncompatibleRule, Trait } from '$lib/types';
 	import {
 		GripVertical,
 		AlertTriangle,
@@ -9,7 +9,9 @@
 		Plus,
 		ChevronDown,
 		ChevronLeft,
-		ChevronRight
+		ChevronRight,
+		ArrowUp,
+		ArrowDown
 	} from 'lucide-svelte';
 	import Button from './ui/Button.svelte';
 	import Select from './ui/Select.svelte';
@@ -20,26 +22,26 @@
 	let previewCanvas = $state<HTMLCanvasElement | null>(null);
 	let showIncompatibility = $state(false);
 
-	let draftConditions = $state<{ layerName: string; traitNames: string[] }[]>([]);
-	let draftBlockLayer = $state('');
-	let draftBlockTrait = $state('');
+	let draftConditions = $state<{ layerId: string; traitIds: string[] }[]>([]);
+	let draftBlockLayerId = $state('');
+	let draftBlockTraitId = $state('');
 	let builderStep = $state<1 | 2>(1);
 
 	const layers = $derived(generator.layers);
 	const rules = $derived(generator.incompatibleRules);
 
-	const usedConditionLayers = $derived(new Set(draftConditions.map((c) => c.layerName)));
-	const availableForBlock = $derived(layers.filter((l) => !usedConditionLayers.has(l.name)));
+	const usedConditionLayers = $derived(new Set(draftConditions.map((c) => c.layerId)));
+	const availableForBlock = $derived(layers.filter((l) => !usedConditionLayers.has(l.id)));
 
 	const ifValid = $derived(
-		draftConditions.length >= 1 && draftConditions.every((c) => c.traitNames.length > 0)
+		draftConditions.length >= 1 && draftConditions.every((c) => c.traitIds.length > 0)
 	);
 
 	const draftValid = $derived(
 		ifValid &&
-			draftBlockLayer !== '' &&
-			draftBlockTrait !== '' &&
-			!usedConditionLayers.has(draftBlockLayer)
+			draftBlockLayerId !== '' &&
+			draftBlockTraitId !== '' &&
+			!usedConditionLayers.has(draftBlockLayerId)
 	);
 
 	$effect(() => {
@@ -51,63 +53,76 @@
 	});
 
 	$effect(() => {
-		if (draftBlockLayer && usedConditionLayers.has(draftBlockLayer)) {
-			draftBlockLayer = '';
+		if (draftBlockLayerId && usedConditionLayers.has(draftBlockLayerId)) {
+			draftBlockLayerId = '';
 		}
-		if (draftBlockTrait && !traitsOfLayer(draftBlockLayer).includes(draftBlockTrait)) {
-			draftBlockTrait = '';
+		if (
+			draftBlockTraitId &&
+			!traitsOfLayer(draftBlockLayerId).some((t) => t.id === draftBlockTraitId)
+		) {
+			draftBlockTraitId = '';
 		}
 	});
 
-	function handleDragStart(index: number) {
+	function round3(n: number) {
+		return Math.round(n * 1000) / 1000;
+	}
+
+	// Live reorder: the dragged layer slots into place as the pointer moves over
+	// targets, so you preview the result mid-drag instead of only on drop. The
+	// grip is the drag source; the whole card is the drop target.
+	function handleDragStart(e: DragEvent, index: number) {
+		draggedIndex = index;
+		const card = (e.currentTarget as HTMLElement).closest(
+			'[data-layer-card]'
+		) as HTMLElement | null;
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/plain', String(index));
+			if (card) e.dataTransfer.setDragImage(card, 24, 24);
+		}
+	}
+
+	function handleDragEnter(index: number) {
+		if (draggedIndex === null || draggedIndex === index) return;
+		generator.moveLayer(draggedIndex, index);
 		draggedIndex = index;
 	}
 
-	function handleDrop(index: number) {
-		if (draggedIndex === null) return;
-		const from = draggedIndex;
-		if (from === index) {
-			draggedIndex = null;
-			return;
-		}
-		const next = [...layers];
-		const [moved] = next.splice(from, 1);
-		next.splice(index, 0, moved);
-		generator.setLayers(next);
+	function handleDragEnd() {
 		draggedIndex = null;
 	}
 
-	function handleWeightChange(layerIndex: number, traitIndex: number, weight: number) {
-		const clamped = Math.max(0, Math.min(100, weight));
-		const next = layers.map((l, i) =>
-			i === layerIndex
-				? {
-						...l,
-						traits: l.traits.map((t, j) => (j === traitIndex ? { ...t, weight: clamped } : t))
-					}
-				: l
+	function handleWeightChange(layerId: string, traitId: string, weight: number) {
+		const clamped = round3(Math.max(0, Math.min(100, weight)));
+		generator.setLayers(
+			layers.map((l) =>
+				l.id === layerId
+					? {
+							...l,
+							traits: l.traits.map((t) => (t.id === traitId ? { ...t, weight: clamped } : t))
+						}
+					: l
+			)
 		);
-		generator.setLayers(next);
 	}
 
-	function bumpWeight(layerIndex: number, traitIndex: number, delta: number) {
-		const current = layers[layerIndex]?.traits[traitIndex]?.weight ?? 0;
-		handleWeightChange(layerIndex, traitIndex, current + delta);
+	function bumpWeight(layerId: string, traitId: string, current: number, delta: number) {
+		handleWeightChange(layerId, traitId, current + delta);
 	}
 
-	function normalizeLayer(layerIndex: number) {
-		const layer = layers[layerIndex];
+	function normalizeLayer(layerId: string) {
+		const layer = layerById(layerId);
+		if (!layer) return;
 		const sum = layer.traits.reduce((a, t) => a + t.weight, 0);
 		if (sum <= 0) return;
-		const next = layers.map((l, i) =>
-			i === layerIndex
-				? {
-						...l,
-						traits: l.traits.map((t) => ({ ...t, weight: (t.weight / sum) * 100 }))
-					}
-				: l
+		generator.setLayers(
+			layers.map((l) =>
+				l.id === layerId
+					? { ...l, traits: l.traits.map((t) => ({ ...t, weight: round3((t.weight / sum) * 100) })) }
+					: l
+			)
 		);
-		generator.setLayers(next);
 	}
 
 	function formatPct(n: number) {
@@ -121,39 +136,45 @@
 		}
 	}
 
-	function traitsOfLayer(name: string): string[] {
-		return layers.find((l) => l.name === name)?.traits.map((t) => t.file.name) ?? [];
+	function layerById(id: string) {
+		return layers.find((l) => l.id === id);
 	}
 
-	function stripExt(name: string): string {
-		return name.replace(/\.[^/.]+$/, '');
+	function layerLabel(id: string): string {
+		return layerById(id)?.name ?? '(removed)';
+	}
+
+	function traitsOfLayer(layerId: string) {
+		return layerById(layerId)?.traits ?? [];
+	}
+
+	function traitLabel(layerId: string, traitId: string): string {
+		return traitsOfLayer(layerId).find((t) => t.id === traitId)?.name ?? '(removed)';
 	}
 
 	function addConditionLayer() {
-		const next = layers.find((l) => !usedConditionLayers.has(l.name));
+		const next = layers.find((l) => !usedConditionLayers.has(l.id));
 		if (!next) return;
-		draftConditions = [...draftConditions, { layerName: next.name, traitNames: [] }];
+		draftConditions = [...draftConditions, { layerId: next.id, traitIds: [] }];
 	}
 
 	function removeCondition(idx: number) {
 		draftConditions = draftConditions.filter((_, i) => i !== idx);
 	}
 
-	function setConditionLayer(idx: number, newLayerName: string) {
+	function setConditionLayer(idx: number, newLayerId: string) {
 		draftConditions = draftConditions.map((c, i) =>
-			i === idx ? { layerName: newLayerName, traitNames: [] } : c
+			i === idx ? { layerId: newLayerId, traitIds: [] } : c
 		);
 	}
 
-	function toggleConditionTrait(idx: number, traitName: string) {
+	function toggleConditionTrait(idx: number, traitId: string) {
 		draftConditions = draftConditions.map((c, i) => {
 			if (i !== idx) return c;
-			const has = c.traitNames.includes(traitName);
+			const has = c.traitIds.includes(traitId);
 			return {
 				...c,
-				traitNames: has
-					? c.traitNames.filter((t) => t !== traitName)
-					: [...c.traitNames, traitName]
+				traitIds: has ? c.traitIds.filter((t) => t !== traitId) : [...c.traitIds, traitId]
 			};
 		});
 	}
@@ -161,22 +182,22 @@
 	function saveRule() {
 		if (!draftValid) return;
 		generator.addIncompatibleRule({
-			conditions: draftConditions.map((c) => ({ ...c, traitNames: [...c.traitNames] })),
-			blockedLayer: draftBlockLayer,
-			blockedTrait: draftBlockTrait
+			conditions: draftConditions.map((c) => ({ layerId: c.layerId, traitIds: [...c.traitIds] })),
+			blockedLayerId: draftBlockLayerId,
+			blockedTraitId: draftBlockTraitId
 		});
 		draftConditions = [];
-		draftBlockLayer = '';
-		draftBlockTrait = '';
+		draftBlockLayerId = '';
+		draftBlockTraitId = '';
 		builderStep = 1;
 	}
 
-	function describeIf(conditions: { layerName: string; traitNames: string[] }[]): string {
+	function describeIf(conditions: { layerId: string; traitIds: string[] }[]): string {
 		return conditions
 			.map((c) => {
-				const traits = c.traitNames.map(stripExt).join(' or ');
-				const wrap = c.traitNames.length > 1 ? `(${traits})` : traits;
-				return `${c.layerName} = ${wrap}`;
+				const traits = c.traitIds.map((tid) => traitLabel(c.layerId, tid)).join(' or ');
+				const wrap = c.traitIds.length > 1 ? `(${traits})` : traits;
+				return `${layerLabel(c.layerId)} = ${wrap}`;
 			})
 			.join(' AND ');
 	}
@@ -188,9 +209,47 @@
 	}
 
 	function describeRule(rule: IncompatibleRule): string {
-		return `If ${describeIf(rule.conditions)} then block ${rule.blockedLayer} = ${stripExt(rule.blockedTrait)}`;
+		return `If ${describeIf(rule.conditions)} then block ${layerLabel(rule.blockedLayerId)} = ${traitLabel(rule.blockedLayerId, rule.blockedTraitId)}`;
 	}
 </script>
+
+{#snippet weightStepper(layerId: string, trait: Trait)}
+	<div
+		class="border-ink/30 bg-surface inline-flex items-stretch overflow-hidden rounded-md border-2 focus-within:border-ink"
+	>
+		<button
+			type="button"
+			onclick={() => bumpWeight(layerId, trait.id, trait.weight, -1)}
+			disabled={trait.weight <= 0}
+			aria-label="Decrease weight by 1%"
+			class="hover:bg-ink/5 flex w-6 items-center justify-center text-ink transition-colors disabled:opacity-40"
+		>
+			<Minus class="h-3 w-3" />
+		</button>
+		<input
+			type="number"
+			value={round3(trait.weight)}
+			min={0}
+			max={100}
+			step={0.001}
+			oninput={(e) => handleWeightChange(layerId, trait.id, parseFloat(e.currentTarget.value) || 0)}
+			class="w-16 border-x border-ink/10 bg-transparent px-1 py-0.5 text-right text-xs text-ink focus:outline-none"
+		/>
+		<span
+			class="font-brains-medium self-center border-r border-ink/10 px-1.5 py-0.5 text-[10px] text-muted"
+			>%</span
+		>
+		<button
+			type="button"
+			onclick={() => bumpWeight(layerId, trait.id, trait.weight, 1)}
+			disabled={trait.weight >= 100}
+			aria-label="Increase weight by 1%"
+			class="hover:bg-ink/5 flex w-6 items-center justify-center text-ink transition-colors disabled:opacity-40"
+		>
+			<Plus class="h-3 w-3" />
+		</button>
+	</div>
+{/snippet}
 
 <section class="animate-in space-y-6 rounded-lg border-2 border-ink bg-surface p-5 md:p-7">
 	<header class="border-border flex items-start justify-between gap-4 border-b pb-4">
@@ -200,8 +259,10 @@
 			</p>
 			<h2 class="font-array-semi mt-1 text-2xl text-ink">Layer &amp; rarity config</h2>
 			<p class="mt-2 max-w-2xl font-body text-xs text-muted">
-				Drag layers to reorder. Top of the list renders on top. Weights are percentages per layer
-				(should sum to 100%), anything down to 0.001%.
+				Reorder with the up/down arrows on the left, or drag the handle on the right (the layer
+				slots into place as you drag). Top of the list renders on top. Click a layer or trait name
+				to rename it. Toggle <span class="font-brains-medium">None</span> to add a trait that renders
+				nothing. Weights are percentages per layer (should sum to 100%), down to 0.001%.
 			</p>
 		</div>
 		<Pill tone="ink">{layers.length} layers</Pill>
@@ -215,85 +276,129 @@
 				</div>
 			{:else}
 				<div class="space-y-3">
-					{#each layers as layer, lIdx (layer.name)}
+					{#each layers as layer, lIdx (layer.id)}
+						{@const noneTrait = layer.traits.find((t) => !t.file)}
+						{@const realTraits = layer.traits.filter((t) => t.file)}
 						{@const layerSum = layer.traits.reduce((a, t) => a + t.weight, 0)}
 						{@const sumOk = Math.abs(layerSum - 100) < 0.01}
 						<div
+							data-layer-card
 							class="border-ink bg-surface rounded-lg border-2 p-4 transition-opacity
-							{draggedIndex === lIdx ? 'opacity-50' : 'hover:bg-ink/[0.06]'}"
-							draggable="true"
-							ondragstart={() => handleDragStart(lIdx)}
+							{draggedIndex === lIdx ? 'opacity-40' : 'hover:bg-ink/[0.06]'}"
 							ondragover={(e) => e.preventDefault()}
-							ondrop={() => handleDrop(lIdx)}
+							ondragenter={() => handleDragEnter(lIdx)}
+							ondrop={(e) => {
+								e.preventDefault();
+								handleDragEnd();
+							}}
 							role="listitem"
 						>
 							<div class="mb-3 flex items-center gap-2">
-								<GripVertical class="h-4 w-4 cursor-grab text-muted" />
-								<span class="font-brains-medium text-xs uppercase tracking-wider text-ink">
-									{layer.name}
-								</span>
-								<Pill tone="muted" class="ml-auto">{layer.traits.length} traits</Pill>
+								<div class="flex flex-col">
+									<button
+										type="button"
+										onclick={() => generator.moveLayer(lIdx, lIdx - 1)}
+										disabled={lIdx === 0}
+										aria-label="Move layer up"
+										class="hover:bg-ink/10 flex h-4 w-5 items-center justify-center rounded-sm text-muted transition-colors disabled:opacity-30"
+									>
+										<ArrowUp class="h-3 w-3" />
+									</button>
+									<button
+										type="button"
+										onclick={() => generator.moveLayer(lIdx, lIdx + 1)}
+										disabled={lIdx === layers.length - 1}
+										aria-label="Move layer down"
+										class="hover:bg-ink/10 flex h-4 w-5 items-center justify-center rounded-sm text-muted transition-colors disabled:opacity-30"
+									>
+										<ArrowDown class="h-3 w-3" />
+									</button>
+								</div>
+								<input
+									value={layer.name}
+									oninput={(e) => generator.renameLayer(layer.id, e.currentTarget.value)}
+									aria-label="Layer name"
+									class="font-brains-medium min-w-0 flex-1 rounded-sm border border-transparent bg-transparent px-1 py-0.5 text-xs uppercase tracking-wider text-ink hover:border-ink/20 focus:border-ink focus:outline-none"
+								/>
+								<Pill tone="muted">{layer.traits.length} traits</Pill>
+								<button
+									type="button"
+									draggable="true"
+									ondragstart={(e) => handleDragStart(e, lIdx)}
+									ondragend={handleDragEnd}
+									aria-label="Drag to reorder layer"
+									title="Drag to reorder"
+									class="shrink-0 cursor-grab text-muted transition-colors hover:text-ink active:cursor-grabbing"
+								>
+									<GripVertical class="h-4 w-4" />
+								</button>
 							</div>
 							<div class="max-h-52 space-y-1.5 overflow-y-auto pr-2">
-								{#each layer.traits as trait, tIdx (trait.file.name)}
+								<div
+									class="border-ink/15 bg-surface grid grid-cols-[1fr_auto] items-center gap-3 rounded-md border px-3 py-1.5 text-xs"
+								>
+									<div class="flex min-w-0 items-center gap-2">
+										<button
+											type="button"
+											role="switch"
+											aria-checked={!!noneTrait}
+											aria-label="Toggle None trait"
+											onclick={() => generator.setLayerAllowNone(layer.id, !noneTrait)}
+											class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border-2 border-ink transition-colors {noneTrait
+												? 'bg-ink'
+												: 'bg-transparent'}"
+										>
+											<span
+												class="inline-block h-2 w-2 rounded-full transition-transform {noneTrait
+													? 'translate-x-3.5 bg-on-ink'
+													: 'translate-x-0.5 bg-ink'}"
+											></span>
+										</button>
+										{#if noneTrait}
+											<input
+												value={noneTrait.name}
+												oninput={(e) =>
+													generator.renameTrait(layer.id, noneTrait.id, e.currentTarget.value)}
+												aria-label="None trait name"
+												title="Renders nothing"
+												class="min-w-0 flex-1 rounded-sm border border-transparent bg-transparent px-1 py-0.5 font-body text-ink hover:border-ink/20 focus:border-ink focus:outline-none"
+											/>
+										{:else}
+											<span class="font-body text-ink">None</span>
+										{/if}
+										<span class="font-brains-medium shrink-0 text-[10px] text-muted">
+											renders nothing
+										</span>
+									</div>
+									{#if noneTrait}
+										{@render weightStepper(layer.id, noneTrait)}
+									{/if}
+								</div>
+
+								{#each realTraits as trait (trait.id)}
 									{@const actualShare = layerSum > 0 ? (trait.weight / layerSum) * 100 : 0}
-									{@const diverges =
-										layerSum > 0 && Math.abs(actualShare - trait.weight) > 0.01}
+									{@const diverges = layerSum > 0 && Math.abs(actualShare - trait.weight) > 0.01}
 									<div
 										class="border-ink/15 bg-surface grid grid-cols-[1fr_auto] items-center gap-3 rounded-md border px-3 py-1.5 text-xs"
 									>
 										<div class="min-w-0">
-											<span class="block truncate font-body text-ink" title={trait.file.name}>
-												{trait.file.name}
-											</span>
+											<input
+												value={trait.name}
+												oninput={(e) =>
+													generator.renameTrait(layer.id, trait.id, e.currentTarget.value)}
+												aria-label="Trait name"
+												title={trait.file ? trait.file.name : 'Renders nothing'}
+												class="block w-full truncate rounded-sm border border-transparent bg-transparent px-1 py-0.5 font-body text-ink hover:border-ink/20 focus:border-ink focus:outline-none"
+											/>
 											{#if diverges}
 												<span
-													class="font-brains-medium text-[10px] text-amber-700 dark:text-amber-400"
+													class="font-brains-medium px-1 text-[10px] text-amber-700 dark:text-amber-400"
 												>
 													actual: {actualShare.toFixed(2)}%
 												</span>
 											{/if}
 										</div>
-										<div
-											class="border-ink/30 bg-surface inline-flex items-stretch overflow-hidden rounded-md border-2 focus-within:border-ink"
-										>
-											<button
-												type="button"
-												onclick={() => bumpWeight(lIdx, tIdx, -1)}
-												disabled={trait.weight <= 0}
-												aria-label="Decrease weight by 1%"
-												class="hover:bg-ink/5 flex w-6 items-center justify-center text-ink transition-colors disabled:opacity-40"
-											>
-												<Minus class="h-3 w-3" />
-											</button>
-											<input
-												type="number"
-												value={trait.weight}
-												min={0}
-												max={100}
-												step={0.001}
-												oninput={(e) =>
-													handleWeightChange(
-														lIdx,
-														tIdx,
-														parseFloat(e.currentTarget.value) || 0
-													)}
-												class="w-16 border-x border-ink/10 bg-transparent px-1 py-0.5 text-right text-xs text-ink focus:outline-none"
-											/>
-											<span
-												class="font-brains-medium self-center border-r border-ink/10 px-1.5 py-0.5 text-[10px] text-muted"
-												>%</span
-											>
-											<button
-												type="button"
-												onclick={() => bumpWeight(lIdx, tIdx, 1)}
-												disabled={trait.weight >= 100}
-												aria-label="Increase weight by 1%"
-												class="hover:bg-ink/5 flex w-6 items-center justify-center text-ink transition-colors disabled:opacity-40"
-											>
-												<Plus class="h-3 w-3" />
-											</button>
-										</div>
+										{@render weightStepper(layer.id, trait)}
 									</div>
 								{/each}
 							</div>
@@ -311,11 +416,7 @@
 										{formatPct(layerSum)}%
 									</span>
 									{#if !sumOk}
-										<Button
-											variant="secondary"
-											size="sm"
-											onclick={() => normalizeLayer(lIdx)}
-										>
+										<Button variant="secondary" size="sm" onclick={() => normalizeLayer(layer.id)}>
 											Normalize
 										</Button>
 									{/if}
@@ -378,9 +479,7 @@
 				{#if rules.length > 0}
 					<div class="space-y-2">
 						<div class="flex items-center gap-3">
-							<p
-								class="font-brains-medium text-[10px] uppercase tracking-widest text-muted"
-							>
+							<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">
 								Active rules ({rules.length})
 							</p>
 							<Button variant="ghost" size="sm" class="ml-auto" onclick={clearAllRules}>
@@ -425,11 +524,7 @@
 
 					{#if builderStep === 1}
 						<div class="space-y-2">
-							<p
-								class="font-brains-medium text-[11px] uppercase tracking-widest text-ink"
-							>
-								If
-							</p>
+							<p class="font-brains-medium text-[11px] uppercase tracking-widest text-ink">If</p>
 							{#if draftConditions.length === 0}
 								<p class="font-body text-xs text-muted">
 									Add a layer condition to start a rule.
@@ -442,13 +537,13 @@
 									>
 										<div class="flex items-center gap-2">
 											<select
-												value={cond.layerName}
+												value={cond.layerId}
 												onchange={(e) => setConditionLayer(cIdx, e.currentTarget.value)}
 												class="font-body flex-1 rounded-md border-2 border-ink bg-surface px-2 py-1 text-xs text-ink focus:outline-none"
 											>
-												{#each layers as l (l.name)}
-													{#if l.name === cond.layerName || !usedConditionLayers.has(l.name)}
-														<option value={l.name}>{l.name}</option>
+												{#each layers as l (l.id)}
+													{#if l.id === cond.layerId || !usedConditionLayers.has(l.id)}
+														<option value={l.id}>{l.name}</option>
 													{/if}
 												{/each}
 											</select>
@@ -462,18 +557,18 @@
 											</button>
 										</div>
 										<ul class="max-h-36 space-y-1 overflow-y-auto pr-1">
-											{#each traitsOfLayer(cond.layerName) as trait (trait)}
+											{#each traitsOfLayer(cond.layerId) as trait (trait.id)}
 												<li>
 													<label
 														class="flex cursor-pointer items-center gap-2 font-body text-xs text-ink"
 													>
 														<input
 															type="checkbox"
-															checked={cond.traitNames.includes(trait)}
-															onchange={() => toggleConditionTrait(cIdx, trait)}
+															checked={cond.traitIds.includes(trait.id)}
+															onchange={() => toggleConditionTrait(cIdx, trait.id)}
 															class="accent-ink"
 														/>
-														<span class="truncate" title={trait}>{stripExt(trait)}</span>
+														<span class="truncate" title={trait.name}>{trait.name}</span>
 													</label>
 												</li>
 											{/each}
@@ -507,20 +602,14 @@
 						</div>
 					{:else}
 						<div class="bg-ink/[0.05] space-y-1 rounded-md px-3 py-2">
-							<p
-								class="font-brains-medium text-[10px] uppercase tracking-widest text-muted"
-							>
-								If
-							</p>
+							<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">If</p>
 							<p class="font-body text-xs leading-snug text-ink">
 								{describeIf(draftConditions)}
 							</p>
 						</div>
 
 						<div class="space-y-2">
-							<p
-								class="font-brains-medium text-[11px] uppercase tracking-widest text-ink"
-							>
+							<p class="font-brains-medium text-[11px] uppercase tracking-widest text-ink">
 								Then block
 							</p>
 							<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -531,10 +620,10 @@
 									>
 										Layer
 									</label>
-									<Select id="block-layer" bind:value={draftBlockLayer}>
+									<Select id="block-layer" bind:value={draftBlockLayerId}>
 										<option value="">Pick a layer</option>
-										{#each availableForBlock as l (l.name)}
-											<option value={l.name}>{l.name}</option>
+										{#each availableForBlock as l (l.id)}
+											<option value={l.id}>{l.name}</option>
 										{/each}
 									</Select>
 								</div>
@@ -547,14 +636,14 @@
 									</label>
 									<Select
 										id="block-trait"
-										bind:value={draftBlockTrait}
-										disabled={!draftBlockLayer}
+										bind:value={draftBlockTraitId}
+										disabled={!draftBlockLayerId}
 									>
 										<option value="">
-											{draftBlockLayer ? 'Pick a trait' : 'Pick a layer first'}
+											{draftBlockLayerId ? 'Pick a trait' : 'Pick a layer first'}
 										</option>
-										{#each traitsOfLayer(draftBlockLayer) as t (t)}
-											<option value={t}>{stripExt(t)}</option>
+										{#each traitsOfLayer(draftBlockLayerId) as t (t.id)}
+											<option value={t.id}>{t.name}</option>
 										{/each}
 									</Select>
 								</div>
@@ -566,12 +655,7 @@
 								<ChevronLeft class="h-4 w-4" />
 								Back
 							</Button>
-							<Button
-								variant="primary"
-								size="sm"
-								onclick={saveRule}
-								disabled={!draftValid}
-							>
+							<Button variant="primary" size="sm" onclick={saveRule} disabled={!draftValid}>
 								Add rule
 							</Button>
 						</div>

@@ -2,7 +2,7 @@ import type { Layer, Combination } from '$lib/types';
 
 interface SerLayer {
 	name: string;
-	traits: { name: string; file: File }[];
+	traits: { id: string; file: File | null }[];
 }
 
 type WorkerResponse =
@@ -12,7 +12,7 @@ type WorkerResponse =
 function serializeLayers(layers: Layer[]): SerLayer[] {
 	return layers.map((layer) => ({
 		name: layer.name,
-		traits: layer.traits.map((t) => ({ name: t.file.name, file: t.file }))
+		traits: layer.traits.map((t) => ({ id: t.id, file: t.file }))
 	}));
 }
 
@@ -154,8 +154,8 @@ async function renderOnMainThread(
 			const combo = collection[i];
 			ctx.clearRect(0, 0, size, size);
 			for (let l = layers.length - 1; l >= 0; l--) {
-				const trait = layers[l].traits.find((t) => t.file.name === combo[l]);
-				if (!trait) continue;
+				const trait = layers[l].traits.find((t) => t.id === combo[l]);
+				if (!trait || !trait.file) continue;
 				let bmp = bitmaps.get(trait.file);
 				if (!bmp) {
 					bmp = await createImageBitmap(trait.file);

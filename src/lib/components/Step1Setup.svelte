@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { generator } from '$lib/stores/generator.svelte';
 	import type { Layer } from '$lib/types';
+	import { uid } from '$lib/id';
 	import { Upload, Image as ImageIcon, Film, Loader2, AlertTriangle } from 'lucide-svelte';
 	import Input from './ui/Input.svelte';
 	import Textarea from './ui/Textarea.svelte';
@@ -26,9 +27,15 @@
 	const uniqueDimensions = $derived([...new Set(allDimensions)]);
 	const dimensionsLoaded = $derived(
 		layers.length > 0 &&
-			layers.every((l) => l.traits.every((t) => t.width !== undefined && t.height !== undefined))
+			layers.every((l) =>
+				l.traits.every((t) => t.file === null || (t.width !== undefined && t.height !== undefined))
+			)
 	);
 	const dimensionsConsistent = $derived(dimensionsLoaded && uniqueDimensions.length <= 1);
+
+	function stripExt(name: string): string {
+		return name.replace(/\.[^/.]+$/, '');
+	}
 
 	function processFolderFiles(items: FileWithPath[]) {
 		const temp: Record<string, File[]> = {};
@@ -48,10 +55,17 @@
 		}
 
 		const newLayers: Layer[] = Object.entries(temp).map(([name, layerFiles]) => {
-			const evenWeight = layerFiles.length > 0 ? 100 / layerFiles.length : 0;
+			const evenWeight =
+				layerFiles.length > 0 ? Math.round((100 / layerFiles.length) * 1000) / 1000 : 0;
 			return {
+				id: uid('layer'),
 				name,
-				traits: layerFiles.map((file) => ({ file, weight: evenWeight }))
+				traits: layerFiles.map((file) => ({
+					id: uid('trait'),
+					name: stripExt(file.name),
+					file,
+					weight: evenWeight
+				}))
 			};
 		});
 
@@ -172,6 +186,7 @@
 					...layer,
 					traits: await Promise.all(
 						layer.traits.map(async (trait) => {
+							if (!trait.file) return trait;
 							if (trait.width !== undefined && trait.height !== undefined) {
 								return trait;
 							}

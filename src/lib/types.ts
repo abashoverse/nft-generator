@@ -1,22 +1,26 @@
 export interface Trait {
-	file: File;
+	id: string;
+	name: string;
+	file: File | null;
 	weight: number;
 	width?: number;
 	height?: number;
 }
 
 export interface Layer {
+	id: string;
 	name: string;
 	traits: Trait[];
+	allowNone?: boolean;
 }
 
 export interface IncompatibleRule {
 	conditions: {
-		layerName: string;
-		traitNames: string[];
+		layerId: string;
+		traitIds: string[];
 	}[];
-	blockedLayer: string;
-	blockedTrait: string;
+	blockedLayerId: string;
+	blockedTraitId: string;
 }
 
 export interface CollectionConfig {

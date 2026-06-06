@@ -102,9 +102,9 @@
 
 			for (let i = 0; i < collection.length; i++) {
 				status = `Generating metadata ${i + 1}/${collection.length}`;
-				const attributes = collection[i].map((trait, idx) => ({
+				const attributes = collection[i].map((traitId, idx) => ({
 					trait_type: layers[idx].name,
-					value: trait.replace(/\.[^/.]+$/, '')
+					value: layers[idx].traits.find((t) => t.id === traitId)?.name ?? ''
 				}));
 
 				const meta: Metadata = {

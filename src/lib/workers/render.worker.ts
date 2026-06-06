@@ -1,8 +1,8 @@
 import type { Combination } from '$lib/types';
 
 interface SerTrait {
-	name: string;
-	file: File;
+	id: string;
+	file: File | null;
 }
 
 interface SerLayer {
@@ -52,8 +52,8 @@ ctx.onmessage = async (event: MessageEvent) => {
 
 		context.clearRect(0, 0, size, size);
 		for (let i = layers.length - 1; i >= 0; i--) {
-			const trait = layers[i].traits.find((t) => t.name === combo[i]);
-			if (!trait) continue;
+			const trait = layers[i].traits.find((t) => t.id === combo[i]);
+			if (!trait || !trait.file) continue;
 			const bmp = await getBitmap(trait.file);
 			context.drawImage(bmp, 0, 0, size, size);
 		}
