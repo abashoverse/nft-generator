@@ -44,6 +44,10 @@ function createGeneratorStore() {
 		incompatibleRules = [...incompatibleRules, rule];
 	}
 
+	function setIncompatibleRules(rules: IncompatibleRule[]) {
+		incompatibleRules = rules;
+	}
+
 	function removeIncompatibleRule(index: number) {
 		incompatibleRules = incompatibleRules.filter((_, i) => i !== index);
 	}
@@ -188,6 +192,7 @@ function createGeneratorStore() {
 		updateConfig,
 		addIncompatibleRule,
 		removeIncompatibleRule,
+		setIncompatibleRules,
 		generateRandomCombo,
 		drawCombo,
 		generatePreview

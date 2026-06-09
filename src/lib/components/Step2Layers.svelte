@@ -11,15 +11,25 @@
 		ChevronLeft,
 		ChevronRight,
 		ArrowUp,
-		ArrowDown
+		ArrowDown,
+		Download,
+		Upload
 	} from 'lucide-svelte';
 	import Button from './ui/Button.svelte';
 	import Pill from './ui/Pill.svelte';
 	import { tick, onDestroy } from 'svelte';
+	import {
+		serializeProject,
+		parseProjectConfig,
+		applyProjectConfig,
+		type ApplyReport
+	} from '$lib/projectConfig';
 
 	let draggedIndex = $state<number | null>(null);
 	let previewCanvas = $state<HTMLCanvasElement | null>(null);
 	let showIncompatibility = $state(false);
+	let configInput = $state<HTMLInputElement | null>(null);
+	let configStatus = $state<{ text: string; tone: 'ok' | 'warn' | 'err' } | null>(null);
 
 	let draftConditions = $state<{ layerId: string; traitIds: string[] }[]>([]);
 	let draftBlocks = $state<{ layerId: string; traitIds: string[] }[]>([]);
@@ -136,6 +146,75 @@
 		await tick();
 		if (previewCanvas) {
 			await generator.generatePreview(previewCanvas);
+		}
+	}
+
+	function slug(name: string): string {
+		return name
+			.trim()
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
+	}
+
+	function exportConfig() {
+		const data = serializeProject(
+			generator.config,
+			generator.layers,
+			generator.incompatibleRules
+		);
+		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `${slug(generator.config.name) || 'collection'}-config.json`;
+		a.click();
+		setTimeout(() => URL.revokeObjectURL(url), 10000);
+	}
+
+	function summarize(r: ApplyReport): { text: string; tone: 'ok' | 'warn' | 'err' } {
+		if (r.noImages) {
+			return {
+				text: 'Loaded collection settings. Add your layer folder in step 1, then load this config again to restore traits and rules.',
+				tone: 'warn'
+			};
+		}
+		const parts = [`${r.layersMatched}/${r.layersInConfig} layers`, `${r.traitsApplied} traits`];
+		if (r.rulesRestored) parts.push(`${r.rulesRestored} rules`);
+		let text = `Loaded ${parts.join(', ')}.`;
+
+		const notes: string[] = [];
+		const s = (n: number) => (n === 1 ? '' : 's');
+		if (r.layersMissing.length)
+			notes.push(`missing layer${s(r.layersMissing.length)} left out: ${r.layersMissing.join(', ')}`);
+		if (r.traitsMissing) notes.push(`${r.traitsMissing} saved file${s(r.traitsMissing)} not in this upload`);
+		if (r.layersAdded) notes.push(`${r.layersAdded} new layer${s(r.layersAdded)} kept from this upload`);
+		if (r.rulesDropped) notes.push(`${r.rulesDropped} rule${s(r.rulesDropped)} dropped`);
+		if (notes.length) text += ` Note: ${notes.join('; ')}.`;
+
+		return { text, tone: notes.length ? 'warn' : 'ok' };
+	}
+
+	async function importConfig(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = ''; // let the same file be picked again later
+		if (!file) return;
+		try {
+			const cfg = parseProjectConfig(await file.text());
+			const { layers: nextLayers, rules, collection, report } = applyProjectConfig(
+				cfg,
+				generator.layers
+			);
+			generator.updateConfig(collection);
+			if (nextLayers.length > 0) generator.setLayers(nextLayers);
+			generator.setIncompatibleRules(rules);
+			configStatus = summarize(report);
+		} catch (err) {
+			configStatus = {
+				text: err instanceof Error ? err.message : 'Could not load that config.',
+				tone: 'err'
+			};
 		}
 	}
 
@@ -353,20 +432,56 @@
 {/snippet}
 
 <section class="animate-in space-y-6 rounded-lg border-2 border-ink bg-surface p-5 md:p-7">
-	<header class="border-border flex items-start justify-between gap-4 border-b pb-4">
-		<div>
-			<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">
-				Step 2 · Layers
-			</p>
-			<h2 class="font-array-semi mt-1 text-2xl text-ink">Layer &amp; rarity config</h2>
-			<p class="mt-2 max-w-2xl font-body text-xs text-muted">
-				Reorder with the up/down arrows on the left, or drag the handle on the right (the layer
-				slots into place as you drag). Top of the list renders on top. Click a layer or trait name
-				to rename it. Toggle <span class="font-brains-medium">None</span> to add a trait that renders
-				nothing. Weights are percentages per layer (should sum to 100%), down to 0.001%.
-			</p>
+	<header class="border-border flex flex-col gap-4 border-b pb-4">
+		<div class="flex items-start justify-between gap-4">
+			<div>
+				<p class="font-brains-medium text-[10px] uppercase tracking-widest text-muted">
+					Step 2 · Layers
+				</p>
+				<h2 class="font-array-semi mt-1 text-2xl text-ink">Layer &amp; rarity config</h2>
+				<p class="mt-2 max-w-2xl font-body text-xs text-muted">
+					Reorder with the up/down arrows on the left, or drag the handle on the right (the layer
+					slots into place as you drag). Top of the list renders on top. Click a layer or trait name
+					to rename it. Toggle <span class="font-brains-medium">None</span> to add a trait that renders
+					nothing. Weights are percentages per layer (should sum to 100%), down to 0.001%.
+				</p>
+			</div>
+			<Pill tone="ink">{layers.length} layers</Pill>
 		</div>
-		<Pill tone="ink">{layers.length} layers</Pill>
+
+		<div class="flex flex-col gap-2">
+			<div class="flex flex-wrap items-center gap-2">
+				<Button variant="secondary" size="sm" onclick={exportConfig} disabled={layers.length === 0}>
+					<Download class="h-3.5 w-3.5" />
+					Save config
+				</Button>
+				<Button variant="secondary" size="sm" onclick={() => configInput?.click()}>
+					<Upload class="h-3.5 w-3.5" />
+					Load config
+				</Button>
+				<input
+					bind:this={configInput}
+					type="file"
+					accept="application/json,.json"
+					class="sr-only"
+					onchange={importConfig}
+				/>
+				<span class="font-body text-[11px] text-muted">
+					Save your rarity setup to reuse or finish later. Re-add your folder first, then load.
+				</span>
+			</div>
+			{#if configStatus}
+				<p
+					class="font-body text-xs leading-snug {configStatus.tone === 'ok'
+						? 'text-emerald-700 dark:text-emerald-400'
+						: configStatus.tone === 'warn'
+							? 'text-amber-700 dark:text-amber-400'
+							: 'text-red-700 dark:text-red-400'}"
+				>
+					{configStatus.text}
+				</p>
+			{/if}
+		</div>
 	</header>
 
 	<div class="grid gap-6 lg:grid-cols-[1.05fr_0.95fr]">
