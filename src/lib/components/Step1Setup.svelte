@@ -37,10 +37,21 @@
 		return name.replace(/\.[^/.]+$/, '');
 	}
 
+	const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif'];
+
+	function isImageFile(name: string): boolean {
+		// Reject hidden/metadata files: .DS_Store, ._* AppleDouble resource forks,
+		// Thumbs.db, .gitignore, etc. macOS includes these when uploading a folder.
+		if (name.startsWith('.')) return false;
+		const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
+		return IMAGE_EXTENSIONS.includes(ext);
+	}
+
 	function processFolderFiles(items: FileWithPath[]) {
 		const temp: Record<string, File[]> = {};
 
 		for (const { file, relativePath } of items) {
+			if (!isImageFile(file.name)) continue;
 			const parts = relativePath.split('/').filter(Boolean);
 			let layerName: string;
 			if (parts.length >= 3) {
@@ -94,12 +105,15 @@
 	): Promise<FileWithPath[]> {
 		const fullPath = basePath ? `${basePath}/${entry.name}` : entry.name;
 		if (entry.isFile) {
+			if (!isImageFile(entry.name)) return [];
 			const file = await new Promise<File>((resolve, reject) => {
 				(entry as FileSystemFileEntry).file(resolve, reject);
 			});
 			return [{ file, relativePath: fullPath }];
 		}
 		if (entry.isDirectory) {
+			// Skip hidden dirs (.git, .svelte-kit) and macOS __MACOSX zip cruft.
+			if (entry.name.startsWith('.') || entry.name === '__MACOSX') return [];
 			const reader = (entry as FileSystemDirectoryEntry).createReader();
 			const collected: FileSystemEntry[] = [];
 			const readBatch = (): Promise<void> =>
