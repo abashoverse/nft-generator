@@ -15,7 +15,7 @@
 	} from 'lucide-svelte';
 	import Button from './ui/Button.svelte';
 	import Pill from './ui/Pill.svelte';
-	import { tick } from 'svelte';
+	import { tick, onDestroy } from 'svelte';
 
 	let draggedIndex = $state<number | null>(null);
 	let previewCanvas = $state<HTMLCanvasElement | null>(null);
@@ -52,6 +52,24 @@
 	function round3(n: number) {
 		return Math.round(n * 1000) / 1000;
 	}
+
+	// Object URLs for trait thumbnails, cached by File so reorders/renames/weight
+	// edits reuse the same URL. Revoked on unmount (steps mount/unmount on nav).
+	const thumbUrls = new Map<File, string>();
+
+	function fileUrl(file: File): string {
+		let url = thumbUrls.get(file);
+		if (!url) {
+			url = URL.createObjectURL(file);
+			thumbUrls.set(file, url);
+		}
+		return url;
+	}
+
+	onDestroy(() => {
+		for (const url of thumbUrls.values()) URL.revokeObjectURL(url);
+		thumbUrls.clear();
+	});
 
 	// Live reorder: the dragged layer slots into place as the pointer moves over
 	// targets, so you preview the result mid-drag instead of only on drop. The
@@ -228,6 +246,25 @@
 	}
 </script>
 
+{#snippet thumb(file: File | null)}
+	{#if file}
+		<div class="thumb border-ink/15 h-16 w-16 shrink-0 overflow-hidden rounded border">
+			<img
+				src={fileUrl(file)}
+				alt=""
+				loading="lazy"
+				decoding="async"
+				class="h-full w-full object-contain"
+			/>
+		</div>
+	{:else}
+		<div
+			class="thumb border-ink/15 h-16 w-16 shrink-0 rounded border"
+			title="Renders nothing"
+		></div>
+	{/if}
+{/snippet}
+
 {#snippet weightStepper(layerId: string, trait: Trait)}
 	<div
 		class="border-ink/30 bg-surface inline-flex items-stretch overflow-hidden rounded-md border-2 focus-within:border-ink"
@@ -397,10 +434,13 @@
 									<GripVertical class="h-4 w-4" />
 								</button>
 							</div>
-							<div class="max-h-52 space-y-1.5 overflow-y-auto pr-2">
+							<div class="max-h-80 space-y-1.5 overflow-y-auto pr-2">
 								<div
-									class="border-ink/15 bg-surface grid grid-cols-[1fr_auto] items-center gap-3 rounded-md border px-3 py-1.5 text-xs"
+									class="border-ink/15 bg-surface grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border px-3 py-1.5 text-xs"
 								>
+									{#if noneTrait}
+										{@render thumb(null)}
+									{/if}
 									<div class="flex min-w-0 items-center gap-2">
 										<button
 											type="button"
@@ -443,8 +483,9 @@
 									{@const actualShare = layerSum > 0 ? (trait.weight / layerSum) * 100 : 0}
 									{@const diverges = layerSum > 0 && Math.abs(actualShare - trait.weight) > 0.01}
 									<div
-										class="border-ink/15 bg-surface grid grid-cols-[1fr_auto] items-center gap-3 rounded-md border px-3 py-1.5 text-xs"
+										class="border-ink/15 bg-surface grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-md border px-3 py-1.5 text-xs"
 									>
+										{@render thumb(trait.file)}
 										<div class="min-w-0">
 											<input
 												value={trait.name}
@@ -674,3 +715,20 @@
 		{/if}
 	</section>
 {/if}
+
+<style>
+	/* Checkerboard so transparent trait PNGs read clearly behind the thumbnail. */
+	.thumb {
+		background-image:
+			linear-gradient(45deg, rgb(128 128 128 / 0.18) 25%, transparent 25%),
+			linear-gradient(-45deg, rgb(128 128 128 / 0.18) 25%, transparent 25%),
+			linear-gradient(45deg, transparent 75%, rgb(128 128 128 / 0.18) 75%),
+			linear-gradient(-45deg, transparent 75%, rgb(128 128 128 / 0.18) 75%);
+		background-size: 10px 10px;
+		background-position:
+			0 0,
+			0 5px,
+			5px -5px,
+			-5px 0;
+	}
+</style>
